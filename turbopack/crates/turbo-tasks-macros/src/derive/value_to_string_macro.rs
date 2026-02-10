@@ -34,7 +34,15 @@ pub fn derive_value_to_string(input: TokenStream) -> TokenStream {
             let attr = find_attr(&derive_input.attrs);
             generate_struct_impl(ident, &data.fields, attr)
         }
-        Data::Enum(data) => generate_enum_impl(ident, &data.variants),
+        Data::Enum(data) => {
+            let attr = find_attr(&derive_input.attrs);
+            if attr.is_some() {
+                // Top-level attribute on enum: treat like a struct (self-based expression).
+                generate_struct_impl(ident, &Fields::Unit, attr)
+            } else {
+                generate_enum_impl(ident, &data.variants)
+            }
+        }
         Data::Union(_) => {
             syn::Error::new_spanned(&derive_input, "ValueToString cannot be derived for unions")
                 .to_compile_error()
