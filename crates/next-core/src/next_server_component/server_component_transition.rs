@@ -1,8 +1,9 @@
 use anyhow::Result;
-use turbo_tasks::Vc;
+use turbo_tasks::{ResolvedVc, Vc};
 use turbopack::{ModuleAssetContext, transition::Transition};
 use turbopack_core::{
-    boundary::BoundaryInfo,
+    boundary::SimpleBoundary,
+    chunk::ChunkingType,
     context::{AssetContext, ProcessResult},
     reference_type::ReferenceType,
     source::Source,
@@ -53,15 +54,22 @@ impl Transition for NextServerComponentTransition {
             match &*module_asset_context.process(source, reference_type).await? {
                 ProcessResult::Module { module, boundary } => {
                     // Return the module with boundary info attached (or preserve existing boundary)
+                    // Use ChunkingType::Shared with inherit_async to preserve the chunking
+                    // semantics that were previously provided by the
+                    // NextServerComponentModule wrapper.
                     ProcessResult::Module {
                         module: *module,
-                        boundary: boundary.or(Some(
-                            BoundaryInfo::with_source_path(
+                        boundary: boundary.or(Some(ResolvedVc::upcast(
+                            SimpleBoundary::with_source_path_and_chunking(
                                 boundary_type_server_component(),
                                 source_path,
+                                ChunkingType::Shared {
+                                    inherit_async: true,
+                                    merge_tag: None,
+                                },
                             )
                             .resolved_cell(),
-                        )),
+                        ))),
                     }
                     .cell()
                 }

@@ -301,7 +301,7 @@ pub async fn primary_referenced_modules(module: Vc<Box<dyn Module>>) -> Result<V
 pub struct ResolvedModule {
     pub module: ResolvedVc<Box<dyn Module>>,
     /// Boundary info if this module crossing represents a boundary (e.g., server component).
-    pub boundary: Option<ResolvedVc<BoundaryInfo>>,
+    pub boundary: Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
 }
 
 #[derive(Clone, Eq, PartialEq, ValueDebugFormat, TraceRawVcs, NonLocalValue, Encode, Decode)]
@@ -349,15 +349,30 @@ pub async fn primary_chunkable_referenced_modules(
                     BindingUsage::default()
                 };
 
+                // Build resolved modules, checking each boundary for a chunking type override
+                let mut modules_with_resolved_chunking = Vec::with_capacity(resolved.len());
+                let mut boundary_chunking_type_override = None;
+
+                for (module, boundary) in resolved {
+                    // If the boundary has a chunking type, use it to override the reference's type
+                    if let Some(boundary) = &boundary {
+                        if let Some(boundary_chunking) = &*boundary.chunking_type().await? {
+                            boundary_chunking_type_override = Some(boundary_chunking.clone());
+                        }
+                    }
+                    modules_with_resolved_chunking.push(ResolvedModule { module, boundary });
+                }
+
+                // Use boundary's chunking type if present, otherwise use reference's chunking type
+                let effective_chunking_type =
+                    boundary_chunking_type_override.unwrap_or_else(|| chunking_type.clone());
+
                 return Ok(Some((
                     ResolvedVc::upcast(reference),
                     ResolvedReference {
-                        chunking_type: chunking_type.clone(),
+                        chunking_type: effective_chunking_type,
                         binding_usage,
-                        modules: resolved
-                            .into_iter()
-                            .map(|(module, boundary)| ResolvedModule { module, boundary })
-                            .collect(),
+                        modules: modules_with_resolved_chunking,
                     },
                 )));
             }

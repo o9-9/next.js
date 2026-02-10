@@ -2,7 +2,6 @@ use anyhow::{Result, bail};
 use turbo_tasks::{ResolvedVc, Vc};
 use turbopack::{ModuleAssetContext, transition::Transition};
 use turbopack_core::{
-    boundary::BoundaryInfo,
     context::ProcessResult,
     file_source::FileSource,
     reference_type::{EcmaScriptModulesReferenceSubType, EntryReferenceSubType, ReferenceType},
@@ -11,7 +10,7 @@ use turbopack_core::{
 use turbopack_ecmascript::chunk::EcmascriptChunkPlaceable;
 
 use crate::{
-    boundary_types::boundary_type_client_reference,
+    boundary_types::EcmascriptClientReferenceBoundary,
     next_client_reference::ecmascript_client_reference::ecmascript_client_reference_module::EcmascriptClientReferenceModule,
 };
 
@@ -136,7 +135,9 @@ impl Transition for NextEcmascriptClientReferenceTransition {
                 .to_resolved()
                 .await?,
             ),
-            boundary: Some(BoundaryInfo::new(boundary_type_client_reference()).resolved_cell()),
+            boundary: Some(ResolvedVc::upcast(
+                EcmascriptClientReferenceBoundary::new(client_module, ssr_module).resolved_cell(),
+            )),
         }
         .cell())
     }

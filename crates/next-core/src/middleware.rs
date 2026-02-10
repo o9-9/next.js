@@ -6,7 +6,7 @@ use turbopack_core::{
     context::AssetContext,
     issue::{Issue, IssueExt, IssueSeverity, IssueStage, OptionStyledString, StyledString},
     module::Module,
-    reference_type::ReferenceType,
+    reference_type::{InnerAssets, ReferenceType},
 };
 use turbopack_ecmascript::chunk::{EcmascriptChunkPlaceable, EcmascriptExports};
 
@@ -104,7 +104,7 @@ pub async fn get_middleware_module(
     let module = asset_context
         .process(
             source,
-            ReferenceType::Internal(ResolvedVc::cell(inner_assets)),
+            ReferenceType::Internal(InnerAssets::from_assets(inner_assets).resolved_cell()),
         )
         .module();
 

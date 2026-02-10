@@ -1,13 +1,11 @@
 use anyhow::{Context, Result};
 use turbo_tasks::{ResolvedVc, Vc};
 use turbopack::{ModuleAssetContext, transition::Transition};
-use turbopack_core::{
-    boundary::BoundaryInfo, context::ProcessResult, reference_type::ReferenceType, source::Source,
-};
+use turbopack_core::{context::ProcessResult, reference_type::ReferenceType, source::Source};
 use turbopack_css::chunk::CssChunkPlaceable;
 
 use crate::{
-    boundary_types::boundary_type_css_client_reference,
+    boundary_types::CssClientReferenceBoundary,
     next_client_reference::css_client_reference::css_client_reference_module::CssClientReferenceModule,
 };
 
@@ -51,7 +49,9 @@ impl Transition for NextCssClientReferenceTransition {
                     .to_resolved()
                     .await?,
             ),
-            boundary: Some(BoundaryInfo::new(boundary_type_css_client_reference()).resolved_cell()),
+            boundary: Some(ResolvedVc::upcast(
+                CssClientReferenceBoundary::new(client_module).resolved_cell(),
+            )),
         }
         .cell())
     }

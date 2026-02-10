@@ -30,6 +30,7 @@ use turbo_tasks::{
     debug::ValueDebugFormat, trace::TraceRawVcs,
 };
 use turbopack_core::{
+    boundary::BoundaryInfo,
     chunk::{ChunkableModule, ChunkingContext, availability_info::AvailabilityInfo},
     module::Module,
     module_graph::{ModuleGraph, ModuleGraphLayer},
@@ -130,8 +131,8 @@ pub async fn map_next_dynamic(
         .map(|(module, boundary)| async move {
             // Check boundary info first (preferred path)
             if let Some(boundary) = boundary {
-                let boundary_info = boundary.await?;
-                if boundary_info.boundary_type == boundary_type_dynamic_entry() {
+                let boundary_type = boundary.boundary_type().await?;
+                if *boundary_type == boundary_type_dynamic_entry() {
                     // Check layer constraint
                     if module.ident().await?.layer.as_ref().is_some_and(|layer| {
                         layer.name() == "app-client" || layer.name() == "client"

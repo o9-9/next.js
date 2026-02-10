@@ -12,6 +12,7 @@ use turbo_tasks::{
 use turbo_tasks_fs::{File, FileContent, FileSystemPath};
 use turbopack_core::{
     asset::{Asset, AssetContent},
+    boundary::BoundaryInfo,
     chunk::{ChunkingContext, ModuleChunkItemIdExt, ModuleId as TurbopackModuleId},
     module_graph::async_module_info::AsyncModulesInfo,
     output::{OutputAsset, OutputAssets, OutputAssetsReference, OutputAssetsWithReferenced},
@@ -409,12 +410,12 @@ async fn build_manifest(
             // Get source path from boundary info (source_path is always set for server components).
             // This ensures the manifest key matches what the LoaderTree stores and what
             // the runtime looks up after stripping one extension.
-            let boundary = server_component.boundary.await?;
-            let source_path = boundary
-                .source_path
+            let source_path_opt = server_component.boundary.source_path().await?;
+            let source_path = source_path_opt
+                .as_ref()
                 .clone()
                 .expect("server component boundary should have source_path");
-            let server_component_name = source_path
+            let server_component_name: RcStr = source_path
                 .with_extension("")
                 .value_to_string()
                 .owned()

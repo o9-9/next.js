@@ -41,7 +41,7 @@ use crate::{
 pub struct ServerComponentEntry {
     pub module: ResolvedVc<Box<dyn Module>>,
     /// Boundary info containing source path and other metadata.
-    pub boundary: ResolvedVc<BoundaryInfo>,
+    pub boundary: ResolvedVc<Box<dyn BoundaryInfo>>,
 }
 
 /// Entry for a server utility with its boundary metadata.
@@ -235,8 +235,7 @@ impl Visit<FindServerEntriesNode> for FindServerEntries {
 
                     // Check boundary info (from transitions)
                     if let Some(boundary) = &resolved_module.boundary {
-                        let boundary_info = boundary.await?;
-                        let boundary_type = &boundary_info.boundary_type;
+                        let boundary_type = boundary.boundary_type().await?;
 
                         // Check for client reference boundaries
                         if *boundary_type == boundary_type_client_reference()

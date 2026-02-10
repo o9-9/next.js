@@ -6,7 +6,10 @@ use turbo_tasks::{ResolvedVc, Upcast, Vc};
 use turbo_tasks_fs::FileSystemPath;
 
 use super::{ModuleResolveResult, options::ResolveOptions, parse::Request};
-use crate::{context::AssetContext, module::OptionModule, reference_type::ReferenceType};
+use crate::{
+    boundary::OptionBoundaryInfo, context::AssetContext, module::OptionModule,
+    reference_type::ReferenceType,
+};
 
 /// A location where resolving can occur from. It carries some meta information
 /// that are needed for resolving from here.
@@ -28,6 +31,15 @@ pub trait ResolveOrigin {
     /// is directly attached
     #[turbo_tasks::function]
     fn get_inner_asset(self: Vc<Self>, request: Vc<Request>) -> Vc<OptionModule> {
+        let _ = request;
+        Vc::cell(None)
+    }
+
+    /// Get boundary info for an inner asset. This is used to propagate boundary
+    /// metadata (e.g., server component, client reference) through inner asset
+    /// resolution.
+    #[turbo_tasks::function]
+    fn get_inner_asset_boundary(self: Vc<Self>, request: Vc<Request>) -> Vc<OptionBoundaryInfo> {
         let _ = request;
         Vc::cell(None)
     }
@@ -94,7 +106,12 @@ async fn resolve_asset(
     reference_type: ReferenceType,
 ) -> Result<Vc<ModuleResolveResult>> {
     if let Some(asset) = *resolve_origin.get_inner_asset(request).await? {
-        return Ok(*ModuleResolveResult::module(asset));
+        let boundary = *resolve_origin.get_inner_asset_boundary(request).await?;
+        return Ok(*if let Some(boundary) = boundary {
+            ModuleResolveResult::module_with_boundary(asset, boundary)
+        } else {
+            ModuleResolveResult::module(asset)
+        });
     }
     Ok(resolve_origin
         .asset_context()
@@ -167,5 +184,10 @@ impl ResolveOrigin for ResolveOriginWithTransition {
     #[turbo_tasks::function]
     fn get_inner_asset(&self, request: Vc<Request>) -> Vc<OptionModule> {
         self.previous.get_inner_asset(request)
+    }
+
+    #[turbo_tasks::function]
+    fn get_inner_asset_boundary(&self, request: Vc<Request>) -> Vc<OptionBoundaryInfo> {
+        self.previous.get_inner_asset_boundary(request)
     }
 }

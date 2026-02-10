@@ -409,9 +409,12 @@ async fn postcss_executor(
                 .owned()
                 .await?,
         )),
-        ReferenceType::Internal(ResolvedVc::cell(fxindexmap! {
-            rcstr!("CONFIG") => config_asset
-        })),
+        ReferenceType::Internal(
+            InnerAssets::from_assets(fxindexmap! {
+                rcstr!("CONFIG") => config_asset
+            })
+            .resolved_cell(),
+        ),
     ))
 }
 

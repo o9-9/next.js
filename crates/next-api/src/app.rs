@@ -52,6 +52,7 @@ use turbopack::{
 };
 use turbopack_core::{
     asset::AssetContent,
+    boundary::BoundaryInfo,
     chunk::{
         ChunkGroupResult, ChunkingContext, ChunkingContextExt, EvaluatableAsset, EvaluatableAssets,
         availability_info::AvailabilityInfo,
@@ -921,9 +922,8 @@ impl AppProject {
                         );
                         graphs.push(graph);
                         // Check if this is a layout by examining the source path from boundary info
-                        let boundary = entry.boundary.await?;
-                        let source_path = boundary
-                            .source_path
+                        let source_path_opt = entry.boundary.source_path().await?;
+                        let source_path = source_path_opt
                             .as_ref()
                             .expect("server component boundary should have source_path");
                         let is_layout = source_path.file_stem() == Some("layout");

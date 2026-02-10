@@ -404,7 +404,7 @@ impl SingleModuleGraph {
     ) -> impl Iterator<
         Item = (
             ResolvedVc<Box<dyn Module>>,
-            Option<ResolvedVc<BoundaryInfo>>,
+            Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
         ),
     > + '_ {
         self.graph.node_weights().filter_map(|n| match n {
@@ -963,7 +963,7 @@ impl ModuleGraphSnapshot {
     ) -> impl Iterator<
         Item = (
             ResolvedVc<Box<dyn Module>>,
-            Option<ResolvedVc<BoundaryInfo>>,
+            Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
         ),
     > + '_ {
         self.graphs
@@ -1523,7 +1523,7 @@ pub enum SingleModuleGraphNode {
         module: ResolvedVc<Box<dyn Module>>,
         /// Boundary info if this module crossed a boundary (e.g., server component, client
         /// reference)
-        boundary: Option<ResolvedVc<BoundaryInfo>>,
+        boundary: Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
     },
     // Models a module that is referenced but has already been visited by an earlier graph.
     VisitedModule {
@@ -1539,7 +1539,7 @@ impl SingleModuleGraphNode {
             SingleModuleGraphNode::VisitedModule { module, .. } => *module,
         }
     }
-    pub fn boundary(&self) -> Option<ResolvedVc<BoundaryInfo>> {
+    pub fn boundary(&self) -> Option<ResolvedVc<Box<dyn BoundaryInfo>>> {
         match self {
             SingleModuleGraphNode::Module { boundary, .. } => *boundary,
             SingleModuleGraphNode::VisitedModule { .. } => None,
@@ -1576,7 +1576,7 @@ enum SingleModuleGraphBuilderNode {
         // module.ident().to_string(), eagerly computed for tracing
         ident: Option<ReadRef<RcStr>>,
         /// Boundary info if this module crossed a boundary
-        boundary: Option<ResolvedVc<BoundaryInfo>>,
+        boundary: Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
     },
     /// A reference to a module that is already listed in visited_modules
     VisitedModule {
@@ -1589,7 +1589,7 @@ impl SingleModuleGraphBuilderNode {
     async fn new_module(
         emit_spans: bool,
         module: ResolvedVc<Box<dyn Module>>,
-        boundary: Option<ResolvedVc<BoundaryInfo>>,
+        boundary: Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
     ) -> Result<Self> {
         Ok(Self::Module {
             module,

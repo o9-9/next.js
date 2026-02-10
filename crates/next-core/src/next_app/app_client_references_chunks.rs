@@ -1,8 +1,9 @@
 use anyhow::Result;
 use tracing::Instrument;
 use turbo_rcstr::rcstr;
-use turbo_tasks::{FxIndexMap, ResolvedVc, TryFlatJoinIterExt, TryJoinIterExt, Vc};
+use turbo_tasks::{FxIndexMap, ResolvedVc, TryFlatJoinIterExt, TryJoinIterExt, ValueToString, Vc};
 use turbopack_core::{
+    boundary::BoundaryInfo,
     chunk::{ChunkGroupResult, ChunkingContext, availability_info::AvailabilityInfo},
     module::Module,
     module_graph::{ModuleGraph, chunk_group_info::ChunkGroup},
@@ -174,17 +175,43 @@ pub async fn get_app_client_references_chunks(
             for (server_component, client_reference_types) in
                 client_references_by_server_component.into_iter()
             {
-                let parent_chunk_group = *chunk_group_info
+                // Look up the server component's Shared chunk group. The boundary's
+                // chunking_type override creates a ChunkingType::Shared edge to the server
+                // component module, which in turn creates ChunkGroup::Shared(module) during
+                // chunk group computation.
+                let parent_chunk_group = match chunk_group_info
                     .get_index_of(ChunkGroup::Shared(server_component.module))
-                    .await?;
+                    .await
+                {
+                    Ok(idx) => *idx,
+                    Err(e) => {
+                        let ident = server_component.module.ident().to_string().await?;
+                        eprintln!(
+                            "ERROR: ChunkGroup::Shared not found for server component {}: {}",
+                            ident, e
+                        );
+                        // Fallback: use the module's first chunk group
+                        let module_chunk_groups = chunk_group_info.module_chunk_groups().await?;
+                        if let Some(bitmap) = module_chunk_groups.get(&server_component.module) {
+                            eprintln!(
+                                "  Module has {} chunk groups: {:?}",
+                                bitmap.len(),
+                                bitmap.iter().collect::<Vec<_>>()
+                            );
+                        } else {
+                            eprintln!("  Module not found in module_chunk_groups at all");
+                        }
+                        return Err(e);
+                    }
+                };
 
                 let base_ident = (*server_component.module).ident();
 
                 // Get server path from boundary info (source_path is always set for server
                 // components)
-                let boundary = server_component.boundary.await?;
-                let server_path = boundary
-                    .source_path
+                let source_path_opt = server_component.boundary.source_path().await?;
+                let server_path = source_path_opt
+                    .as_ref()
                     .clone()
                     .expect("server component boundary should have source_path");
                 let is_layout = server_path.file_stem() == Some("layout");

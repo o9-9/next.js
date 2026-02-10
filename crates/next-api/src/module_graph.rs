@@ -5,8 +5,9 @@ use either::Either;
 use futures::join;
 use next_core::{
     next_client_reference::{
-        ClientReference, ClientReferenceGraphResult, ClientReferenceType, ServerComponentEntry,
-        ServerEntries, ServerUtilEntry, find_server_entries,
+        ClientReference, ClientReferenceGraphResult, ClientReferenceType,
+        EcmascriptClientReferenceModule, ServerComponentEntry, ServerEntries, ServerUtilEntry,
+        find_server_entries,
     },
     next_manifests::ActionLayer,
 };
@@ -579,10 +580,18 @@ impl ClientReferencesGraph {
                     };
 
                     match module_type {
-                        ClientManifestEntryType::EcmascriptClientReference { module, .. } => {
+                        ClientManifestEntryType::EcmascriptClientReference { .. } => {
+                            // The node itself is the EcmascriptClientReferenceModule
+                            let module = ResolvedVc::try_downcast_type::<
+                                EcmascriptClientReferenceModule,
+                            >(node)
+                            .expect(
+                                "EcmascriptClientReference boundary should be on \
+                                 EcmascriptClientReferenceModule",
+                            );
                             client_references.push(ClientReference {
                                 server_component: None,
-                                ty: ClientReferenceType::EcmascriptClientReference(*module),
+                                ty: ClientReferenceType::EcmascriptClientReference(module),
                             });
                         }
                         ClientManifestEntryType::CssClientReference(module) => {
@@ -637,12 +646,18 @@ impl ClientReferencesGraph {
                         };
 
                         match module_type {
-                            ClientManifestEntryType::EcmascriptClientReference {
-                                module, ..
-                            } => {
+                            ClientManifestEntryType::EcmascriptClientReference { .. } => {
+                                // The node itself is the EcmascriptClientReferenceModule
+                                let ecma_module = ResolvedVc::try_downcast_type::<
+                                    EcmascriptClientReferenceModule,
+                                >(module)
+                                .expect(
+                                    "EcmascriptClientReference boundary should be on \
+                                     EcmascriptClientReferenceModule",
+                                );
                                 client_references.push(ClientReference {
                                     server_component: Some(sc),
-                                    ty: ClientReferenceType::EcmascriptClientReference(*module),
+                                    ty: ClientReferenceType::EcmascriptClientReference(ecma_module),
                                 });
                             }
                             ClientManifestEntryType::CssClientReference(module) => {

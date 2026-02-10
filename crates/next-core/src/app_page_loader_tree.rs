@@ -8,7 +8,7 @@ use turbo_rcstr::{RcStr, rcstr};
 use turbo_tasks::{FxIndexMap, ResolvedVc, Vc};
 use turbo_tasks_fs::FileSystemPath;
 use turbopack::{ModuleAssetContext, transition::Transition};
-use turbopack_core::{file_source::FileSource, module::Module};
+use turbopack_core::{boundary::BoundaryInfo, file_source::FileSource, module::Module};
 use turbopack_ecmascript::{magic_identifier, text::TextContentFileSource, utils::StringifyJs};
 
 use crate::{
@@ -198,10 +198,12 @@ impl AppPageLoaderTreeBuilder {
                     app_page.clone(),
                 );
 
-                let module = self.base.process_source(source).to_resolved().await?;
-                self.base
-                    .inner_assets
-                    .insert(inner_module_id.into(), module);
+                let (module, boundary) = self.base.process_source(source).await?;
+                let key: RcStr = inner_module_id.into();
+                self.base.inner_assets.insert(key.clone(), module);
+                if let Some(boundary) = boundary {
+                    self.base.inner_asset_boundaries.insert(key, boundary);
+                }
 
                 let s = "      ";
                 writeln!(self.loader_tree_code, "{s}{identifier}.default,")?;
@@ -299,17 +301,18 @@ impl AppPageLoaderTreeBuilder {
                 .imports
                 .push(format!("const {identifier} = require(\"{inner_module_id}\");").into());
 
-            let module = self
+            let (module, boundary) = self
                 .base
                 .process_source(Vc::upcast(TextContentFileSource::new(Vc::upcast(
                     FileSource::new(alt_path),
                 ))))
-                .to_resolved()
                 .await?;
 
-            self.base
-                .inner_assets
-                .insert(inner_module_id.into(), module);
+            let key: RcStr = inner_module_id.into();
+            self.base.inner_assets.insert(key.clone(), module);
+            if let Some(boundary) = boundary {
+                self.base.inner_asset_boundaries.insert(key, boundary);
+            }
 
             writeln!(self.loader_tree_code, "{s}  alt: {identifier}.default,")?;
         }
@@ -421,14 +424,15 @@ impl AppPageLoaderTreeBuilder {
         let modules = &loader_tree.modules;
         // load global-not-found module
         if let Some(global_not_found) = &modules.global_not_found {
-            let module = self
+            let (module, boundary) = self
                 .base
                 .process_source(Vc::upcast(FileSource::new(global_not_found.clone())))
-                .to_resolved()
                 .await?;
-            self.base
-                .inner_assets
-                .insert(GLOBAL_NOT_FOUND.into(), module);
+            let key: RcStr = GLOBAL_NOT_FOUND.into();
+            self.base.inner_assets.insert(key.clone(), module);
+            if let Some(boundary) = boundary {
+                self.base.inner_asset_boundaries.insert(key, boundary);
+            }
         };
 
         self.walk_tree(loader_tree, true).await?;
@@ -436,6 +440,7 @@ impl AppPageLoaderTreeBuilder {
             imports: self.base.imports,
             loader_tree_code: self.loader_tree_code.into(),
             inner_assets: self.base.inner_assets,
+            inner_asset_boundaries: self.base.inner_asset_boundaries,
         })
     }
 }
@@ -444,6 +449,7 @@ pub struct AppPageLoaderTreeModule {
     pub imports: Vec<RcStr>,
     pub loader_tree_code: RcStr,
     pub inner_assets: FxIndexMap<RcStr, ResolvedVc<Box<dyn Module>>>,
+    pub inner_asset_boundaries: FxIndexMap<RcStr, ResolvedVc<Box<dyn BoundaryInfo>>>,
 }
 
 impl AppPageLoaderTreeModule {

@@ -4,7 +4,10 @@ use turbo_rcstr::rcstr;
 use turbo_tasks::{NonLocalValue, ResolvedVc, TaskInput, Vc, fxindexmap, trace::TraceRawVcs};
 use turbopack::{ModuleAssetContext, module_options::CustomModuleType};
 use turbopack_core::{
-    context::AssetContext, module::Module, reference_type::ReferenceType, resolve::ModulePart,
+    context::AssetContext,
+    module::Module,
+    reference_type::{InnerAssets, ReferenceType},
+    resolve::ModulePart,
     source::Source,
 };
 use turbopack_ecmascript::EcmascriptInputTransforms;
@@ -68,9 +71,12 @@ impl StructuredImageModuleType {
                     }
                     .cell(),
                 ),
-                ReferenceType::Internal(ResolvedVc::cell(fxindexmap!(
-                    rcstr!("IMAGE") => ResolvedVc::upcast(static_asset)
-                ))),
+                ReferenceType::Internal(
+                    InnerAssets::from_assets(fxindexmap!(
+                        rcstr!("IMAGE") => ResolvedVc::upcast(static_asset)
+                    ))
+                    .resolved_cell(),
+                ),
             )
             .module())
     }

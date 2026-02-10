@@ -19,7 +19,7 @@ pub enum ProcessResult {
     /// A module was created, optionally with boundary metadata.
     Module {
         module: ResolvedVc<Box<dyn Module>>,
-        boundary: Option<ResolvedVc<BoundaryInfo>>,
+        boundary: Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
     },
 
     /// A module could not be created (according to the rules, e.g. no module type was assigned)
@@ -32,7 +32,7 @@ pub enum ProcessResult {
 
 impl ProcessResult {
     /// Get the boundary info if present
-    pub fn boundary(&self) -> Option<ResolvedVc<BoundaryInfo>> {
+    pub fn boundary(&self) -> Option<ResolvedVc<Box<dyn BoundaryInfo>>> {
         match self {
             ProcessResult::Module { boundary, .. } => *boundary,
             _ => None,

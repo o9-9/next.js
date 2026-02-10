@@ -6,7 +6,7 @@ use turbopack::ModuleAssetContext;
 use turbopack_core::{
     context::AssetContext,
     module::Module,
-    reference_type::{EntryReferenceSubType, ReferenceType},
+    reference_type::{EntryReferenceSubType, InnerAssets, ReferenceType},
     source::Source,
 };
 
@@ -103,7 +103,7 @@ pub async fn get_app_route_entry(
     let mut rsc_entry = module_asset_context
         .process(
             virtual_source,
-            ReferenceType::Internal(ResolvedVc::cell(inner_assets)),
+            ReferenceType::Internal(InnerAssets::from_assets(inner_assets).resolved_cell()),
         )
         .module();
 
@@ -150,7 +150,7 @@ async fn wrap_edge_route(
     let wrapped = asset_context
         .process(
             source,
-            ReferenceType::Internal(ResolvedVc::cell(inner_assets)),
+            ReferenceType::Internal(InnerAssets::from_assets(inner_assets).resolved_cell()),
         )
         .module();
 

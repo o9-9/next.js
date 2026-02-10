@@ -373,10 +373,13 @@ pub async fn get_evaluate_entries(
                     .cell(),
                 ),
             )),
-            ReferenceType::Internal(ResolvedVc::cell(fxindexmap! {
-                rcstr!("INNER") => module_asset,
-                rcstr!("RUNTIME") => runtime_asset
-            })),
+            ReferenceType::Internal(
+                InnerAssets::from_assets(fxindexmap! {
+                    rcstr!("INNER") => module_asset,
+                    rcstr!("RUNTIME") => runtime_asset
+                })
+                .resolved_cell(),
+            ),
         )
         .module()
         .to_resolved()

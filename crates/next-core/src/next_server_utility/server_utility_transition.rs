@@ -1,14 +1,15 @@
 use anyhow::Result;
-use turbo_tasks::Vc;
+use turbo_tasks::{ResolvedVc, Vc};
 use turbopack::{ModuleAssetContext, transition::Transition};
 use turbopack_core::{
-    boundary::BoundaryInfo,
+    boundary::SimpleBoundary,
+    chunk::ChunkingType,
     context::{AssetContext, ProcessResult},
     reference_type::ReferenceType,
     source::Source,
 };
 
-use crate::boundary_types::boundary_type_server_utility;
+use crate::boundary_types::{SERVER_UTILITY_MERGE_TAG, boundary_type_server_utility};
 
 /// This transition marks a module as a server utility boundary.
 ///
@@ -47,11 +48,20 @@ impl Transition for NextServerUtilityTransition {
             match &*module_asset_context.process(source, reference_type).await? {
                 ProcessResult::Module { module, boundary } => {
                     // Return the module with boundary info attached (or preserve existing boundary)
+                    // Use ChunkingType::Shared with inherit_async and merge_tag to preserve the
+                    // chunking semantics that were previously provided by NextServerUtilityModule.
                     ProcessResult::Module {
                         module: *module,
-                        boundary: boundary.or(Some(
-                            BoundaryInfo::new(boundary_type_server_utility()).resolved_cell(),
-                        )),
+                        boundary: boundary.or(Some(ResolvedVc::upcast(
+                            SimpleBoundary::with_chunking(
+                                boundary_type_server_utility(),
+                                ChunkingType::Shared {
+                                    inherit_async: true,
+                                    merge_tag: Some(SERVER_UTILITY_MERGE_TAG.clone()),
+                                },
+                            )
+                            .resolved_cell(),
+                        ))),
                     }
                     .cell()
                 }

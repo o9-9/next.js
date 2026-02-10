@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use turbo_tasks::{ResolvedVc, Vc};
 use turbopack::{ModuleAssetContext, transition::Transition};
 use turbopack_core::{
-    boundary::BoundaryInfo,
+    boundary::SimpleBoundary,
     context::{AssetContext, ProcessResult},
     reference_type::ReferenceType,
     source::Source,
@@ -82,9 +82,9 @@ impl Transition for NextDynamicTransition {
                 // (override any existing boundary with DynamicEntry)
                 ProcessResult::Module {
                     module: ResolvedVc::upcast(client_module),
-                    boundary: Some(
-                        BoundaryInfo::new(boundary_type_dynamic_entry()).resolved_cell(),
-                    ),
+                    boundary: Some(ResolvedVc::upcast(
+                        SimpleBoundary::new(boundary_type_dynamic_entry()).resolved_cell(),
+                    )),
                 }
                 .cell()
             }

@@ -81,7 +81,7 @@ pub async fn bootstrap(
     let asset = asset_context
         .process(
             bootstrap_asset,
-            ReferenceType::Internal(ResolvedVc::cell(inner_assets)),
+            ReferenceType::Internal(inner_assets.resolved_cell()),
         )
         .module()
         .to_resolved()

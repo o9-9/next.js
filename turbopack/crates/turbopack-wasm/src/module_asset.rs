@@ -3,6 +3,7 @@ use turbo_rcstr::rcstr;
 use turbo_tasks::{IntoTraitRef, ResolvedVc, Vc, fxindexmap};
 use turbo_tasks_fs::FileSystemPath;
 use turbopack_core::{
+    boundary::OptionBoundaryInfo,
     chunk::{
         AsyncModuleInfo, ChunkableModule, ChunkingContext, chunk_group::references_to_output_assets,
     },
@@ -12,7 +13,7 @@ use turbopack_core::{
     module_graph::ModuleGraph,
     output::OutputAssetsWithReferenced,
     reference::{ModuleReferences, SingleChunkableModuleReference},
-    reference_type::ReferenceType,
+    reference_type::{InnerAssets, ReferenceType},
     resolve::{ExportUsage, origin::ResolveOrigin, parse::Request},
     source::{OptionSource, Source},
 };
@@ -70,9 +71,9 @@ impl WebAssemblyModuleAsset {
 
         let module = self.asset_context.process(
             loader_source,
-            ReferenceType::Internal(ResolvedVc::cell(fxindexmap! {
+            ReferenceType::Internal(InnerAssets::from_assets(fxindexmap! {
                 rcstr!("WASM_PATH") => ResolvedVc::upcast(RawWebAssemblyModuleAsset::new(*self.source, *self.asset_context).to_resolved().await?),
-            })),
+            }).resolved_cell()),
         ).module();
 
         Ok(module)
@@ -219,5 +220,11 @@ impl ResolveOrigin for WebAssemblyModuleAsset {
     #[turbo_tasks::function]
     fn get_inner_asset(self: Vc<Self>, request: Vc<Request>) -> Vc<OptionModule> {
         self.loader_as_resolve_origin().get_inner_asset(request)
+    }
+
+    #[turbo_tasks::function]
+    fn get_inner_asset_boundary(self: Vc<Self>, request: Vc<Request>) -> Vc<OptionBoundaryInfo> {
+        self.loader_as_resolve_origin()
+            .get_inner_asset_boundary(request)
     }
 }

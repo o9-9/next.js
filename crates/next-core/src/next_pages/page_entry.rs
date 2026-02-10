@@ -10,7 +10,7 @@ use turbopack_core::{
     context::AssetContext,
     file_source::FileSource,
     module::Module,
-    reference_type::{EntryReferenceSubType, ReferenceType},
+    reference_type::{EntryReferenceSubType, InnerAssets, ReferenceType},
     source::Source,
     virtual_source::VirtualSource,
 };
@@ -229,7 +229,7 @@ pub async fn create_page_ssr_entry_module(
     let mut ssr_module = ssr_module_context
         .process(
             source,
-            ReferenceType::Internal(ResolvedVc::cell(inner_assets)),
+            ReferenceType::Internal(InnerAssets::from_assets(inner_assets).resolved_cell()),
         )
         .module();
 

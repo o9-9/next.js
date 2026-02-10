@@ -5,22 +5,73 @@ use bincode::{Decode, Encode};
 use turbo_rcstr::RcStr;
 use turbo_tasks::{FxIndexMap, NonLocalValue, ResolvedVc, TaskInput, Vc, trace::TraceRawVcs};
 
-use crate::{module::Module, resolve::ModulePart};
+use crate::{boundary::BoundaryInfo, module::Module, resolve::ModulePart};
 
 /// Named references to inner assets. Modules can use them to allow to
 /// per-module aliases of some requests to already created module assets.
 ///
 /// Name is usually in UPPER_CASE to make it clear that this is an inner asset.
-#[turbo_tasks::value(transparent)]
-pub struct InnerAssets(
-    #[bincode(with = "turbo_bincode::indexmap")] FxIndexMap<RcStr, ResolvedVc<Box<dyn Module>>>,
-);
+///
+/// Also carries optional boundary info per inner asset, which is used to
+/// propagate boundary metadata (e.g., server component, client reference)
+/// through the inner asset resolution path.
+#[derive(Clone)]
+#[turbo_tasks::value(shared)]
+pub struct InnerAssets {
+    #[bincode(with = "turbo_bincode::indexmap")]
+    assets: FxIndexMap<RcStr, ResolvedVc<Box<dyn Module>>>,
+    #[bincode(with = "turbo_bincode::indexmap")]
+    boundaries: FxIndexMap<RcStr, ResolvedVc<Box<dyn BoundaryInfo>>>,
+}
+
+impl InnerAssets {
+    /// Create InnerAssets from a module map with no boundaries.
+    pub fn from_assets(assets: FxIndexMap<RcStr, ResolvedVc<Box<dyn Module>>>) -> Self {
+        Self {
+            assets,
+            boundaries: FxIndexMap::default(),
+        }
+    }
+
+    /// Create InnerAssets from a module map with boundaries.
+    pub fn with_boundaries(
+        assets: FxIndexMap<RcStr, ResolvedVc<Box<dyn Module>>>,
+        boundaries: FxIndexMap<RcStr, ResolvedVc<Box<dyn BoundaryInfo>>>,
+    ) -> Self {
+        Self { assets, boundaries }
+    }
+
+    /// Iterate over inner assets (module name → module).
+    pub fn iter(&self) -> impl Iterator<Item = (&RcStr, &ResolvedVc<Box<dyn Module>>)> {
+        self.assets.iter()
+    }
+
+    /// Look up an inner asset by name.
+    pub fn get(&self, key: &RcStr) -> Option<&ResolvedVc<Box<dyn Module>>> {
+        self.assets.get(key)
+    }
+
+    /// Look up boundary info for an inner asset by name.
+    pub fn get_boundary(&self, key: &RcStr) -> Option<&ResolvedVc<Box<dyn BoundaryInfo>>> {
+        self.boundaries.get(key)
+    }
+
+    /// Check if there are no inner assets.
+    pub fn is_empty(&self) -> bool {
+        self.assets.is_empty()
+    }
+
+    /// Insert a module into inner assets.
+    pub fn insert(&mut self, key: RcStr, module: ResolvedVc<Box<dyn Module>>) {
+        self.assets.insert(key, module);
+    }
+}
 
 #[turbo_tasks::value_impl]
 impl InnerAssets {
     #[turbo_tasks::function]
     pub fn empty() -> Vc<Self> {
-        Vc::cell(FxIndexMap::default())
+        InnerAssets::from_assets(FxIndexMap::default()).cell()
     }
 }
 

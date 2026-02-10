@@ -2,7 +2,11 @@ use anyhow::Result;
 use turbo_rcstr::{RcStr, rcstr};
 use turbo_tasks::{ResolvedVc, Vc, fxindexmap};
 use turbo_tasks_fs::FileSystemPath;
-use turbopack_core::{context::AssetContext, module::Module, reference_type::ReferenceType};
+use turbopack_core::{
+    context::AssetContext,
+    module::Module,
+    reference_type::{InnerAssets, ReferenceType},
+};
 
 use crate::util::load_next_js_template_no_imports;
 
@@ -34,7 +38,7 @@ pub async fn wrap_edge_entry(
     Ok(asset_context
         .process(
             template_source,
-            ReferenceType::Internal(ResolvedVc::cell(inner_assets)),
+            ReferenceType::Internal(InnerAssets::from_assets(inner_assets).resolved_cell()),
         )
         .module())
 }

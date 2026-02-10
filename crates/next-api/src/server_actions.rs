@@ -35,7 +35,7 @@ use turbopack_core::{
     module::Module,
     module_graph::{ModuleGraph, ModuleGraphLayer, async_module_info::AsyncModulesInfo},
     output::OutputAsset,
-    reference_type::{EcmaScriptModulesReferenceSubType, ReferenceType},
+    reference_type::{EcmaScriptModulesReferenceSubType, InnerAssets, ReferenceType},
     resolve::ModulePart,
     virtual_output::VirtualOutputAsset,
     virtual_source::VirtualSource,
@@ -138,7 +138,7 @@ pub(crate) async fn build_server_actions_loader(
     let module = asset_context
         .process(
             Vc::upcast(source),
-            ReferenceType::Internal(ResolvedVc::cell(import_map)),
+            ReferenceType::Internal(InnerAssets::from_assets(import_map).resolved_cell()),
         )
         .module();
 

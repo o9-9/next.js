@@ -93,7 +93,7 @@ pub enum ModuleResolveResultItem {
     /// Module with optional boundary metadata - used for server components, client refs, etc.
     Module {
         module: ResolvedVc<Box<dyn Module>>,
-        boundary: Option<ResolvedVc<BoundaryInfo>>,
+        boundary: Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
     },
     OutputAsset(ResolvedVc<Box<dyn OutputAsset>>),
     External {
@@ -126,7 +126,7 @@ impl ModuleResolveResultItem {
     }
 
     /// Get the boundary info if present
-    pub fn boundary(&self) -> Option<ResolvedVc<BoundaryInfo>> {
+    pub fn boundary(&self) -> Option<ResolvedVc<Box<dyn BoundaryInfo>>> {
         match self {
             ModuleResolveResultItem::Module { boundary, .. } => *boundary,
             _ => None,
@@ -227,6 +227,24 @@ impl ModuleResolveResult {
         Self::module_with_key(RequestKey::default(), module)
     }
 
+    pub fn module_with_boundary(
+        module: ResolvedVc<Box<dyn Module>>,
+        boundary: ResolvedVc<Box<dyn BoundaryInfo>>,
+    ) -> ResolvedVc<Self> {
+        ModuleResolveResult {
+            primary: vec![(
+                RequestKey::default(),
+                ModuleResolveResultItem::Module {
+                    module,
+                    boundary: Some(boundary),
+                },
+            )]
+            .into_boxed_slice(),
+            affecting_sources: Default::default(),
+        }
+        .resolved_cell()
+    }
+
     pub fn module_with_key(
         request_key: RequestKey,
         module: ResolvedVc<Box<dyn Module>>,
@@ -321,7 +339,7 @@ impl ModuleResolveResult {
     ) -> Result<
         Vec<(
             ResolvedVc<Box<dyn Module>>,
-            Option<ResolvedVc<BoundaryInfo>>,
+            Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
         )>,
     > {
         let mut set = FxIndexSet::default();

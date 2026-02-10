@@ -1,10 +1,12 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use indoc::formatdoc;
 use turbo_rcstr::RcStr;
 use turbo_tasks::{FxIndexMap, ResolvedVc, Vc};
 use turbo_tasks_fs::FileSystemPath;
 use turbopack::{ModuleAssetContext, transition::Transition};
 use turbopack_core::{
+    boundary::BoundaryInfo,
+    context::ProcessResult,
     file_source::FileSource,
     module::Module,
     reference_type::{EcmaScriptModulesReferenceSubType, ReferenceType},
@@ -14,6 +16,7 @@ use turbopack_ecmascript::{magic_identifier, utils::StringifyJs};
 
 pub struct BaseLoaderTreeBuilder {
     pub inner_assets: FxIndexMap<RcStr, ResolvedVc<Box<dyn Module>>>,
+    pub inner_asset_boundaries: FxIndexMap<RcStr, ResolvedVc<Box<dyn BoundaryInfo>>>,
     counter: usize,
     pub imports: Vec<RcStr>,
     pub module_asset_context: ResolvedVc<ModuleAssetContext>,
@@ -60,6 +63,7 @@ impl BaseLoaderTreeBuilder {
     ) -> Self {
         BaseLoaderTreeBuilder {
             inner_assets: FxIndexMap::default(),
+            inner_asset_boundaries: FxIndexMap::default(),
             counter: 0,
             imports: Vec::new(),
             module_asset_context,
@@ -73,13 +77,29 @@ impl BaseLoaderTreeBuilder {
         i
     }
 
-    pub fn process_source(&self, source: Vc<Box<dyn Source>>) -> Vc<Box<dyn Module>> {
+    pub async fn process_source(
+        &self,
+        source: Vc<Box<dyn Source>>,
+    ) -> Result<(
+        ResolvedVc<Box<dyn Module>>,
+        Option<ResolvedVc<Box<dyn BoundaryInfo>>>,
+    )> {
         let reference_type =
             ReferenceType::EcmaScriptModules(EcmaScriptModulesReferenceSubType::Undefined);
 
-        self.server_component_transition
+        let process_result = self
+            .server_component_transition
             .process(source, *self.module_asset_context, reference_type)
-            .module()
+            .await?;
+        match &*process_result {
+            ProcessResult::Module { module, boundary } => Ok((*module, *boundary)),
+            ProcessResult::Ignore => {
+                bail!("Expected process result to be a module, but it was ignored")
+            }
+            ProcessResult::Unknown(_) => {
+                bail!("Expected process result to be a module, but it could not be processed")
+            }
+        }
     }
 
     pub fn process_module(&self, module: Vc<Box<dyn Module>>) -> Vc<Box<dyn Module>> {
@@ -107,13 +127,15 @@ impl BaseLoaderTreeBuilder {
             .into(),
         );
 
-        let module = self
+        let (module, boundary) = self
             .process_source(Vc::upcast(FileSource::new(path.clone())))
-            .to_resolved()
             .await?;
 
-        self.inner_assets
-            .insert(format!("MODULE_{i}").into(), module);
+        let key: RcStr = format!("MODULE_{i}").into();
+        self.inner_assets.insert(key.clone(), module);
+        if let Some(boundary) = boundary {
+            self.inner_asset_boundaries.insert(key, boundary);
+        }
 
         // Use the original source path, not the transformed module path.
         // This is important for MDX files where page.mdx becomes page.mdx.tsx after

@@ -9,7 +9,7 @@ use turbopack_core::{
     asset::{Asset, AssetContent},
     context::AssetContext,
     module::Module,
-    reference_type::ReferenceType,
+    reference_type::{InnerAssets, ReferenceType},
     source::Source,
     virtual_source::VirtualSource,
 };
@@ -58,6 +58,7 @@ pub async fn get_app_page_entry(
 
     let AppPageLoaderTreeModule {
         inner_assets,
+        inner_asset_boundaries,
         imports,
         loader_tree_code,
     } = loader_tree;
@@ -103,7 +104,9 @@ pub async fn get_app_page_entry(
     let mut rsc_entry = module_asset_context
         .process(
             Vc::upcast(source),
-            ReferenceType::Internal(ResolvedVc::cell(inner_assets)),
+            ReferenceType::Internal(
+                InnerAssets::with_boundaries(inner_assets, inner_asset_boundaries).resolved_cell(),
+            ),
         )
         .module();
 
@@ -150,7 +153,7 @@ async fn wrap_edge_page(
     let wrapped = asset_context
         .process(
             source,
-            ReferenceType::Internal(ResolvedVc::cell(inner_assets)),
+            ReferenceType::Internal(InnerAssets::from_assets(inner_assets).resolved_cell()),
         )
         .module();
 

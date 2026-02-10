@@ -14,7 +14,7 @@ use turbopack_core::{
     module::Module,
     output::{OutputAsset, OutputAssets, OutputAssetsReference, OutputAssetsWithReferenced},
     proxied_asset::ProxiedAsset,
-    reference_type::{EntryReferenceSubType, ReferenceType},
+    reference_type::{EntryReferenceSubType, InnerAssets, ReferenceType},
     source::Source,
     virtual_source::VirtualSource,
 };
@@ -60,9 +60,12 @@ pub async fn create_page_loader_entry_module(
     let module = client_context
         .process(
             virtual_source,
-            ReferenceType::Internal(ResolvedVc::cell(fxindexmap! {
-                rcstr!("PAGE") => module,
-            })),
+            ReferenceType::Internal(
+                InnerAssets::from_assets(fxindexmap! {
+                    rcstr!("PAGE") => module,
+                })
+                .resolved_cell(),
+            ),
         )
         .module();
     Ok(module)

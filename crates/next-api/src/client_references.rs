@@ -1,11 +1,8 @@
 use anyhow::Result;
 use bincode::{Decode, Encode};
-use next_core::{
-    boundary_types::{
-        boundary_type_client_reference, boundary_type_css_client_reference,
-        boundary_type_server_component, boundary_type_server_utility,
-    },
-    next_client_reference::{CssClientReferenceModule, EcmascriptClientReferenceModule},
+use next_core::boundary_types::{
+    CssClientReferenceBoundary, EcmascriptClientReferenceBoundary, boundary_type_server_component,
+    boundary_type_server_utility,
 };
 use rustc_hash::FxHashMap;
 use turbo_tasks::{
@@ -13,19 +10,20 @@ use turbo_tasks::{
 };
 use turbopack_core::{boundary::BoundaryInfo, module::Module, module_graph::ModuleGraphLayer};
 use turbopack_css::chunk::CssChunkPlaceable;
+use turbopack_ecmascript::chunk::EcmascriptChunkPlaceable;
 
 #[derive(
     Copy, Clone, Eq, PartialEq, TraceRawVcs, ValueDebugFormat, NonLocalValue, Encode, Decode,
 )]
 pub enum ClientManifestEntryType {
     EcmascriptClientReference {
-        module: ResolvedVc<EcmascriptClientReferenceModule>,
-        ssr_module: ResolvedVc<Box<dyn Module>>,
+        client_module: ResolvedVc<Box<dyn EcmascriptChunkPlaceable>>,
+        ssr_module: ResolvedVc<Box<dyn EcmascriptChunkPlaceable>>,
     },
     CssClientReference(ResolvedVc<Box<dyn CssChunkPlaceable>>),
     /// Server component or server utility boundary (boundary_type cached for sync access)
     Boundary {
-        boundary: ResolvedVc<BoundaryInfo>,
+        boundary: ResolvedVc<Box<dyn BoundaryInfo>>,
         is_server_component: bool,
     },
 }
@@ -47,8 +45,7 @@ pub async fn map_client_references(
                 return Ok(None);
             };
 
-            let boundary_info = boundary.await?;
-            let boundary_type = &boundary_info.boundary_type;
+            let boundary_type = boundary.boundary_type().await?;
 
             if *boundary_type == boundary_type_server_component() {
                 return Ok(Some((
@@ -70,31 +67,27 @@ pub async fn map_client_references(
                 )));
             }
 
-            // Client references - downcast to get module-specific data
-            if *boundary_type == boundary_type_client_reference() {
-                let client_reference_module = ResolvedVc::try_downcast_type::<
-                    EcmascriptClientReferenceModule,
-                >(module)
-                .expect("client reference boundary should be on EcmascriptClientReferenceModule");
+            // Client references - downcast boundary to get module-specific data
+            if let Some(ecma_boundary) =
+                ResolvedVc::try_downcast_type::<EcmascriptClientReferenceBoundary>(boundary)
+            {
+                let boundary_data = ecma_boundary.await?;
                 return Ok(Some((
                     module,
                     ClientManifestEntryType::EcmascriptClientReference {
-                        module: client_reference_module,
-                        ssr_module: ResolvedVc::upcast(client_reference_module.await?.ssr_module),
+                        client_module: boundary_data.client_module,
+                        ssr_module: boundary_data.ssr_module,
                     },
                 )));
             }
 
-            if *boundary_type == boundary_type_css_client_reference() {
-                let client_reference_module = ResolvedVc::try_downcast_type::<
-                    CssClientReferenceModule,
-                >(module)
-                .expect("css client reference boundary should be on CssClientReferenceModule");
+            if let Some(css_boundary) =
+                ResolvedVc::try_downcast_type::<CssClientReferenceBoundary>(boundary)
+            {
+                let boundary_data = css_boundary.await?;
                 return Ok(Some((
                     module,
-                    ClientManifestEntryType::CssClientReference(
-                        client_reference_module.await?.client_module,
-                    ),
+                    ClientManifestEntryType::CssClientReference(boundary_data.client_module),
                 )));
             }
 

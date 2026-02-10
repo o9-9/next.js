@@ -80,6 +80,7 @@ use turbo_tasks::{
 };
 use turbo_tasks_fs::{FileJsonContent, FileSystemPath, glob::Glob, rope::Rope};
 use turbopack_core::{
+    boundary::OptionBoundaryInfo,
     chunk::{
         AsyncModuleInfo, ChunkItem, ChunkableModule, ChunkingContext, EvaluatableAsset,
         MergeableModule, MergeableModuleExposure, MergeableModules, MergeableModulesExposed,
@@ -878,6 +879,22 @@ impl ResolveOrigin for EcmascriptModuleAsset {
         Ok(Vc::cell(if let Some(inner_assets) = &self.inner_assets {
             if let Some(request) = request.await?.request() {
                 inner_assets.await?.get(&request).copied()
+            } else {
+                None
+            }
+        } else {
+            None
+        }))
+    }
+
+    #[turbo_tasks::function]
+    async fn get_inner_asset_boundary(
+        &self,
+        request: Vc<Request>,
+    ) -> Result<Vc<OptionBoundaryInfo>> {
+        Ok(Vc::cell(if let Some(inner_assets) = &self.inner_assets {
+            if let Some(request) = request.await?.request() {
+                inner_assets.await?.get_boundary(&request).copied()
             } else {
                 None
             }
