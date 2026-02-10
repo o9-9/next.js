@@ -6,7 +6,6 @@ use lightningcss::{
     traits::ToCss,
     values::string::CowArcStr,
 };
-use turbo_rcstr::RcStr;
 use turbo_tasks::{ResolvedVc, ValueToString, Vc};
 use turbopack_core::{
     chunk::{ChunkableModuleReference, ChunkingContext},
@@ -80,7 +79,8 @@ impl ImportAttributes {
 }
 
 #[turbo_tasks::value]
-#[derive(Hash, Debug)]
+#[derive(Hash, Debug, ValueToString)]
+#[value_to_string("import(url) {}", self.request)]
 pub struct ImportAssetReference {
     pub origin: ResolvedVc<Box<dyn ResolveOrigin>>,
     pub request: ResolvedVc<Request>,
@@ -139,16 +139,6 @@ impl ModuleReference for ImportAssetReference {
             *self.request,
             CssReferenceSubType::AtImport(import_context),
             Some(self.issue_source),
-        ))
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for ImportAssetReference {
-    #[turbo_tasks::function]
-    async fn to_string(&self) -> Result<Vc<RcStr>> {
-        Ok(Vc::cell(
-            format!("import(url) {}", self.request.to_string().await?,).into(),
         ))
     }
 }

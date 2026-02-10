@@ -10,7 +10,6 @@ use swc_core::{
     },
     quote, quote_expr,
 };
-use turbo_rcstr::RcStr;
 use turbo_tasks::{
     NonLocalValue, ReadRef, ResolvedVc, TryJoinIterExt, ValueToString, Vc, debug::ValueDebugFormat,
     trace::TraceRawVcs,
@@ -35,7 +34,8 @@ use crate::{
 };
 
 #[turbo_tasks::value]
-#[derive(Hash, Debug)]
+#[derive(Hash, Debug, ValueToString)]
+#[value_to_string("AMD define dependency {}", self.request)]
 pub struct AmdDefineAssetReference {
     origin: ResolvedVc<Box<dyn ResolveOrigin>>,
     request: ResolvedVc<Request>,
@@ -72,16 +72,6 @@ impl ModuleReference for AmdDefineAssetReference {
             Some(self.issue_source),
             self.error_mode,
         )
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for AmdDefineAssetReference {
-    #[turbo_tasks::function]
-    async fn to_string(&self) -> Result<Vc<RcStr>> {
-        Ok(Vc::cell(
-            format!("AMD define dependency {}", self.request.to_string().await?,).into(),
-        ))
     }
 }
 

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bincode::{Decode, Encode};
 use turbo_rcstr::{RcStr, rcstr};
 use turbo_tasks::{NonLocalValue, TaskInput, trace::TraceRawVcs};
@@ -10,6 +12,16 @@ pub enum WorkerType {
     WebWorker,
     SharedWebWorker,
     NodeWorkerThread,
+}
+
+impl fmt::Display for WorkerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WorkerType::WebWorker => f.write_str("web worker"),
+            WorkerType::SharedWebWorker => f.write_str("shared web worker"),
+            WorkerType::NodeWorkerThread => f.write_str("node worker thread"),
+        }
+    }
 }
 
 impl WorkerType {

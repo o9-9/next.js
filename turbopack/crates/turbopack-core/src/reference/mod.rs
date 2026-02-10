@@ -52,6 +52,8 @@ impl ModuleReferences {
 
 /// A reference that always resolves to a single module.
 #[turbo_tasks::value]
+#[derive(ValueToString)]
+#[value_to_string(self.description)]
 pub struct SingleModuleReference {
     asset: ResolvedVc<Box<dyn Module>>,
     description: RcStr,
@@ -62,14 +64,6 @@ impl ModuleReference for SingleModuleReference {
     #[turbo_tasks::function]
     fn resolve_reference(&self) -> Vc<ModuleResolveResult> {
         *ModuleResolveResult::module(self.asset)
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for SingleModuleReference {
-    #[turbo_tasks::function]
-    fn to_string(&self) -> Vc<RcStr> {
-        Vc::cell(self.description.clone())
     }
 }
 
@@ -90,6 +84,8 @@ impl SingleModuleReference {
 }
 
 #[turbo_tasks::value]
+#[derive(ValueToString)]
+#[value_to_string(self.description)]
 pub struct SingleChunkableModuleReference {
     asset: ResolvedVc<Box<dyn Module>>,
     description: RcStr,
@@ -140,16 +136,10 @@ impl ModuleReference for SingleChunkableModuleReference {
     }
 }
 
-#[turbo_tasks::value_impl]
-impl ValueToString for SingleChunkableModuleReference {
-    #[turbo_tasks::function]
-    fn to_string(&self) -> Vc<RcStr> {
-        Vc::cell(self.description.clone())
-    }
-}
-
 /// A reference that always resolves to a single module.
 #[turbo_tasks::value]
+#[derive(ValueToString)]
+#[value_to_string(self.description)]
 pub struct SingleOutputAssetReference {
     asset: ResolvedVc<Box<dyn OutputAsset>>,
     description: RcStr,
@@ -160,14 +150,6 @@ impl ModuleReference for SingleOutputAssetReference {
     #[turbo_tasks::function]
     fn resolve_reference(&self) -> Vc<ModuleResolveResult> {
         *ModuleResolveResult::output_asset(RequestKey::default(), self.asset)
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for SingleOutputAssetReference {
-    #[turbo_tasks::function]
-    fn to_string(&self) -> Vc<RcStr> {
-        Vc::cell(self.description.clone())
     }
 }
 
@@ -225,6 +207,8 @@ pub async fn referenced_modules_and_affecting_sources(
 }
 
 #[turbo_tasks::value]
+#[derive(ValueToString)]
+#[value_to_string("traced {}", self.module.ident())]
 pub struct TracedModuleReference {
     module: ResolvedVc<Box<dyn Module>>,
 }
@@ -234,16 +218,6 @@ impl ModuleReference for TracedModuleReference {
     #[turbo_tasks::function]
     fn resolve_reference(&self) -> Vc<ModuleResolveResult> {
         *ModuleResolveResult::module(self.module)
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for TracedModuleReference {
-    #[turbo_tasks::function]
-    async fn to_string(&self) -> Result<Vc<RcStr>> {
-        Ok(Vc::cell(
-            format!("traced {}", self.module.ident().to_string().await?).into(),
-        ))
     }
 }
 

@@ -14,7 +14,7 @@ use swc_core::{
     quote, quote_expr,
 };
 use turbo_esregex::EsRegex;
-use turbo_rcstr::{RcStr, rcstr};
+use turbo_rcstr::RcStr;
 use turbo_tasks::{
     FxIndexMap, NonLocalValue, ResolvedVc, ValueToString, Vc, debug::ValueDebugFormat,
     trace::TraceRawVcs,
@@ -364,6 +364,8 @@ impl RequireContextAssetReferenceCodeGen {
 }
 
 #[turbo_tasks::value(transparent)]
+#[derive(ValueToString)]
+#[value_to_string("resolved reference")]
 pub struct ResolvedModuleReference(ResolvedVc<ModuleResolveResult>);
 
 #[turbo_tasks::value_impl]
@@ -371,14 +373,6 @@ impl ModuleReference for ResolvedModuleReference {
     #[turbo_tasks::function]
     fn resolve_reference(&self) -> Vc<ModuleResolveResult> {
         *self.0
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for ResolvedModuleReference {
-    #[turbo_tasks::function]
-    fn to_string(&self) -> Vc<RcStr> {
-        Vc::cell(rcstr!("resolved reference"))
     }
 }
 

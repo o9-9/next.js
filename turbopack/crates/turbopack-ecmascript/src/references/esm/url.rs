@@ -4,7 +4,6 @@ use swc_core::{
     ecma::ast::{Expr, ExprOrSpread, NewExpr},
     quote,
 };
-use turbo_rcstr::RcStr;
 use turbo_tasks::{
     NonLocalValue, ResolvedVc, TaskInput, ValueToString, Vc, debug::ValueDebugFormat,
     trace::TraceRawVcs,
@@ -55,6 +54,8 @@ pub enum UrlRewriteBehavior {
 /// It's responsible rewriting the `URL` constructor's arguments to allow the
 /// referenced file to be imported/fetched/etc.
 #[turbo_tasks::value]
+#[derive(ValueToString)]
+#[value_to_string("new URL({})", self.request)]
 pub struct UrlAssetReference {
     origin: ResolvedVc<Box<dyn ResolveOrigin>>,
     request: ResolvedVc<Request>,
@@ -99,16 +100,6 @@ impl ModuleReference for UrlAssetReference {
             Some(self.issue_source),
             self.error_mode,
         )
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for UrlAssetReference {
-    #[turbo_tasks::function]
-    async fn to_string(&self) -> Result<Vc<RcStr>> {
-        Ok(Vc::cell(
-            format!("new URL({})", self.request.to_string().await?,).into(),
-        ))
     }
 }
 

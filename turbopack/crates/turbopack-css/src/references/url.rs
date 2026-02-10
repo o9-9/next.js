@@ -30,7 +30,8 @@ pub enum ReferencedAsset {
 }
 
 #[turbo_tasks::value]
-#[derive(Hash, Debug)]
+#[derive(Hash, Debug, ValueToString)]
+#[value_to_string("url {}", self.request)]
 pub struct UrlAssetReference {
     pub origin: ResolvedVc<Box<dyn ResolveOrigin>>,
     pub request: ResolvedVc<Request>,
@@ -88,16 +89,6 @@ impl ModuleReference for UrlAssetReference {
 
 #[turbo_tasks::value_impl]
 impl ChunkableModuleReference for UrlAssetReference {}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for UrlAssetReference {
-    #[turbo_tasks::function]
-    async fn to_string(&self) -> Result<Vc<RcStr>> {
-        Ok(Vc::cell(
-            format!("url {}", self.request.to_string().await?,).into(),
-        ))
-    }
-}
 
 #[turbo_tasks::function]
 pub async fn resolve_url_reference(

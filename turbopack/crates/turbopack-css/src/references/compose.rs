@@ -1,5 +1,3 @@
-use anyhow::Result;
-use turbo_rcstr::RcStr;
 use turbo_tasks::{ResolvedVc, ValueToString, Vc};
 use turbopack_core::{
     chunk::ChunkableModuleReference,
@@ -12,7 +10,8 @@ use crate::references::css_resolve;
 
 /// A `composes: ... from ...` CSS module reference.
 #[turbo_tasks::value]
-#[derive(Hash, Debug)]
+#[derive(Hash, Debug, ValueToString)]
+#[value_to_string("compose(url) {}", self.request)]
 pub struct CssModuleComposeReference {
     pub origin: ResolvedVc<Box<dyn ResolveOrigin>>,
     pub request: ResolvedVc<Request>,
@@ -41,16 +40,6 @@ impl ModuleReference for CssModuleComposeReference {
             // TODO: add real issue source, currently impossible
             None,
         )
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for CssModuleComposeReference {
-    #[turbo_tasks::function]
-    async fn to_string(&self) -> Result<Vc<RcStr>> {
-        Ok(Vc::cell(
-            format!("compose(url) {}", self.request.to_string().await?,).into(),
-        ))
     }
 }
 

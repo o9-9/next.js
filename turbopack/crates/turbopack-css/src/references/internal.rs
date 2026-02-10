@@ -1,5 +1,3 @@
-use anyhow::Result;
-use turbo_rcstr::RcStr;
 use turbo_tasks::{ResolvedVc, ValueToString, Vc};
 use turbopack_core::{
     chunk::ChunkableModuleReference, module::Module, reference::ModuleReference,
@@ -8,7 +6,8 @@ use turbopack_core::{
 
 /// A reference to an internal CSS asset.
 #[turbo_tasks::value]
-#[derive(Hash, Debug)]
+#[derive(Hash, Debug, ValueToString)]
+#[value_to_string("internal css {}", self.module.ident())]
 pub struct InternalCssAssetReference {
     module: ResolvedVc<Box<dyn Module>>,
 }
@@ -27,16 +26,6 @@ impl ModuleReference for InternalCssAssetReference {
     #[turbo_tasks::function]
     fn resolve_reference(&self) -> Vc<ModuleResolveResult> {
         *ModuleResolveResult::module(self.module)
-    }
-}
-
-#[turbo_tasks::value_impl]
-impl ValueToString for InternalCssAssetReference {
-    #[turbo_tasks::function]
-    async fn to_string(&self) -> Result<Vc<RcStr>> {
-        Ok(Vc::cell(
-            format!("internal css {}", self.module.ident().to_string().await?).into(),
-        ))
     }
 }
 

@@ -6,6 +6,7 @@ mod task_storage_macro;
 mod trace_raw_vcs_macro;
 mod value_debug_format_macro;
 mod value_debug_macro;
+mod value_to_string_macro;
 
 pub use deterministic_hash_macro::derive_deterministic_hash;
 pub use non_local_value_macro::derive_non_local_value;
@@ -16,6 +17,7 @@ pub use task_storage_macro::task_storage;
 pub use trace_raw_vcs_macro::derive_trace_raw_vcs;
 pub use value_debug_format_macro::derive_value_debug_format;
 pub use value_debug_macro::derive_value_debug;
+pub use value_to_string_macro::derive_value_to_string;
 
 struct FieldAttributes {
     trace_ignore: bool,
