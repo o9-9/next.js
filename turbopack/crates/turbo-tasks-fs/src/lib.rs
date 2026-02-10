@@ -2917,7 +2917,7 @@ mod tests {
 
         use rand::{Rng, SeedableRng};
         use turbo_rcstr::{RcStr, rcstr};
-        use turbo_tasks::{ResolvedVc, ValueToString, Vc, apply_effects};
+        use turbo_tasks::{ResolvedVc, Vc, apply_effects};
         use turbo_tasks_backend::{BackendOptions, TurboTasksBackend, noop_backing_storage};
 
         use crate::{DiskFileSystem, FileSystem, FileSystemPath, LinkContent, LinkType};
