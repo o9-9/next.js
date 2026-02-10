@@ -12,8 +12,6 @@ static REGISTRATION: Registration = register!();
 
 // --- Test types ---
 
-/// A struct that implements Display and uses the derive without a format string.
-/// The derive delegates to Display::to_string(self).
 #[turbo_tasks::value(shared)]
 #[derive(ValueToString)]
 struct SimpleDisplay(u32);
@@ -24,7 +22,6 @@ impl fmt::Display for SimpleDisplay {
     }
 }
 
-/// A struct with a format string attribute that references named fields.
 #[turbo_tasks::value(shared)]
 #[derive(ValueToString)]
 #[value_to_string("item {name} (count: {count})")]
@@ -33,13 +30,40 @@ struct NamedFields {
     count: u32,
 }
 
-/// A struct with a format string that references positional fields.
 #[turbo_tasks::value(shared)]
 #[derive(ValueToString)]
 #[value_to_string("wrapped({0})")]
 struct TupleStruct(u32);
 
-/// An enum with per-variant format strings.
+#[turbo_tasks::value(shared)]
+#[derive(ValueToString)]
+#[value_to_string("constant-value")]
+struct ConstantString;
+
+#[turbo_tasks::value(shared)]
+#[derive(ValueToString)]
+#[value_to_string(self.name)]
+struct DirectExpr {
+    name: RcStr,
+    #[allow(dead_code)]
+    other: u32,
+}
+
+#[turbo_tasks::value(shared)]
+#[derive(ValueToString)]
+#[value_to_string("prefix({}) suffix({})", self.name, self.count)]
+struct FormatExprs {
+    name: RcStr,
+    count: u32,
+}
+
+#[turbo_tasks::value(shared)]
+#[derive(ValueToString)]
+#[value_to_string("inner: {}", self.inner)]
+struct VcExprDelegate {
+    inner: ResolvedVc<NamedFields>,
+}
+
 #[turbo_tasks::value(shared)]
 #[derive(ValueToString)]
 enum Kind {
@@ -51,7 +75,6 @@ enum Kind {
     Entry { name: RcStr },
 }
 
-/// An enum that defaults variant names when no attribute is given.
 #[turbo_tasks::value(shared)]
 #[derive(ValueToString)]
 enum DefaultNames {
@@ -59,40 +82,6 @@ enum DefaultNames {
     Beta,
 }
 
-/// A struct using the direct expression form.
-#[turbo_tasks::value(shared)]
-#[derive(ValueToString)]
-#[value_to_string(self.name)]
-struct DirectExpr {
-    name: RcStr,
-    #[allow(dead_code)]
-    other: u32,
-}
-
-/// A struct using the constant string form (no field references).
-#[turbo_tasks::value(shared)]
-#[derive(ValueToString)]
-#[value_to_string("constant-value")]
-struct ConstantString;
-
-/// A struct using format string with expression arguments.
-#[turbo_tasks::value(shared)]
-#[derive(ValueToString)]
-#[value_to_string("prefix({}) suffix({})", self.name, self.count)]
-struct FormatExprs {
-    name: RcStr,
-    count: u32,
-}
-
-/// A struct that delegates to a Vc field via expression.
-#[turbo_tasks::value(shared)]
-#[derive(ValueToString)]
-#[value_to_string("inner: {}", self.inner)]
-struct VcExprDelegate {
-    inner: ResolvedVc<NamedFields>,
-}
-
-/// An enum with mixed forms.
 #[turbo_tasks::value(shared)]
 #[derive(ValueToString)]
 enum MixedEnum {
@@ -106,95 +95,34 @@ enum MixedEnum {
 
 // --- Tests ---
 
+/// No attribute: delegates to Display::to_string(self).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_simple_display_delegation() {
+async fn test_display_delegation() {
     run_once(&REGISTRATION, || async {
         let v: Vc<SimpleDisplay> = SimpleDisplay(42).cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "simple:42");
+        assert_eq!(&*v.to_string().await?, "simple:42");
         anyhow::Ok(())
     })
     .await
     .unwrap()
 }
 
+/// FormatAutoFields on structs: named fields, positional fields, and constant strings.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_named_fields_format() {
+async fn test_struct_format_strings() {
     run_once(&REGISTRATION, || async {
-        let v: Vc<NamedFields> = NamedFields {
+        let v1: Vc<NamedFields> = NamedFields {
             name: "foo".into(),
             count: 7,
         }
         .cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "item foo (count: 7)");
-        anyhow::Ok(())
-    })
-    .await
-    .unwrap()
-}
+        assert_eq!(&*v1.to_string().await?, "item foo (count: 7)");
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tuple_struct_format() {
-    run_once(&REGISTRATION, || async {
-        let v: Vc<TupleStruct> = TupleStruct(99).cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "wrapped(99)");
-        anyhow::Ok(())
-    })
-    .await
-    .unwrap()
-}
+        let v2: Vc<TupleStruct> = TupleStruct(99).cell();
+        assert_eq!(&*v2.to_string().await?, "wrapped(99)");
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_enum_unit_variant() {
-    run_once(&REGISTRATION, || async {
-        let v: Vc<Kind> = Kind::Module.cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "module");
-        anyhow::Ok(())
-    })
-    .await
-    .unwrap()
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_enum_tuple_variant() {
-    run_once(&REGISTRATION, || async {
-        let v: Vc<Kind> = Kind::Asset("main.js".into()).cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "asset(main.js)");
-        anyhow::Ok(())
-    })
-    .await
-    .unwrap()
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_enum_named_variant() {
-    run_once(&REGISTRATION, || async {
-        let v: Vc<Kind> = (Kind::Entry {
-            name: "index".into(),
-        })
-        .cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "entry index");
-        anyhow::Ok(())
-    })
-    .await
-    .unwrap()
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_enum_default_variant_names() {
-    run_once(&REGISTRATION, || async {
-        let v1: Vc<DefaultNames> = DefaultNames::Alpha.cell();
-        let s1 = v1.to_string().await?;
-        assert_eq!(&*s1, "Alpha");
-
-        let v2: Vc<DefaultNames> = DefaultNames::Beta.cell();
-        let s2 = v2.to_string().await?;
-        assert_eq!(&*s2, "Beta");
+        let v3: Vc<ConstantString> = ConstantString.cell();
+        assert_eq!(&*v3.to_string().await?, "constant-value");
 
         anyhow::Ok(())
     })
@@ -202,85 +130,92 @@ async fn test_enum_default_variant_names() {
     .unwrap()
 }
 
+/// DirectExpr form: single expression delegation.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_direct_expression() {
+async fn test_struct_direct_expr() {
     run_once(&REGISTRATION, || async {
         let v: Vc<DirectExpr> = DirectExpr {
             name: "hello".into(),
             other: 42,
         }
         .cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "hello");
+        assert_eq!(&*v.to_string().await?, "hello");
         anyhow::Ok(())
     })
     .await
     .unwrap()
 }
 
+/// FormatExprs on structs: format string with explicit expressions, including Vc delegation.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_constant_string() {
+async fn test_struct_format_exprs() {
     run_once(&REGISTRATION, || async {
-        let v: Vc<ConstantString> = ConstantString.cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "constant-value");
-        anyhow::Ok(())
-    })
-    .await
-    .unwrap()
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_format_with_expressions() {
-    run_once(&REGISTRATION, || async {
-        let v: Vc<FormatExprs> = FormatExprs {
+        let v1: Vc<FormatExprs> = FormatExprs {
             name: "test".into(),
             count: 5,
         }
         .cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "prefix(test) suffix(5)");
-        anyhow::Ok(())
-    })
-    .await
-    .unwrap()
-}
+        assert_eq!(&*v1.to_string().await?, "prefix(test) suffix(5)");
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_vc_expression_delegate() {
-    run_once(&REGISTRATION, || async {
         let inner = NamedFields {
             name: "bar".into(),
             count: 3,
         }
         .resolved_cell();
-        let v: Vc<VcExprDelegate> = VcExprDelegate { inner }.cell();
-        let s = v.to_string().await?;
-        assert_eq!(&*s, "inner: item bar (count: 3)");
+        let v2: Vc<VcExprDelegate> = VcExprDelegate { inner }.cell();
+        assert_eq!(&*v2.to_string().await?, "inner: item bar (count: 3)");
+
         anyhow::Ok(())
     })
     .await
     .unwrap()
 }
 
+/// Enum with per-variant auto-field format strings and default variant names.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_enum_variants() {
+    run_once(&REGISTRATION, || async {
+        // Per-variant attributes
+        assert_eq!(&*Kind::Module.cell().to_string().await?, "module");
+        assert_eq!(
+            &*Kind::Asset("main.js".into()).cell().to_string().await?,
+            "asset(main.js)"
+        );
+        assert_eq!(
+            &*(Kind::Entry {
+                name: "index".into()
+            })
+            .cell()
+            .to_string()
+            .await?,
+            "entry index"
+        );
+
+        // Default variant names (no attribute)
+        assert_eq!(&*DefaultNames::Alpha.cell().to_string().await?, "Alpha");
+        assert_eq!(&*DefaultNames::Beta.cell().to_string().await?, "Beta");
+
+        anyhow::Ok(())
+    })
+    .await
+    .unwrap()
+}
+
+/// Enum with mixed forms: constant literal, Vc delegation, and format exprs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_mixed_enum() {
     run_once(&REGISTRATION, || async {
-        let v1: Vc<MixedEnum> = MixedEnum::Literal.cell();
-        let s1 = v1.to_string().await?;
-        assert_eq!(&*s1, "literal");
+        assert_eq!(&*MixedEnum::Literal.cell().to_string().await?, "literal");
 
         let inner = ConstantString.resolved_cell();
         let v2: Vc<MixedEnum> = MixedEnum::Delegate(inner).cell();
-        let s2 = v2.to_string().await?;
-        assert_eq!(&*s2, "constant-value");
+        assert_eq!(&*v2.to_string().await?, "constant-value");
 
         let v3: Vc<MixedEnum> = (MixedEnum::ExprNamed {
             name: "world".into(),
         })
         .cell();
-        let s3 = v3.to_string().await?;
-        assert_eq!(&*s3, "wrapped(world)");
+        assert_eq!(&*v3.to_string().await?, "wrapped(world)");
 
         anyhow::Ok(())
     })

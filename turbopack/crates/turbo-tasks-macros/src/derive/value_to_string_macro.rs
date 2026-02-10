@@ -8,73 +8,23 @@ use syn::{
 
 /// The parsed form of a `#[value_to_string(...)]` attribute.
 enum AttrForm {
-    /// `#[value_to_string("{field} text")]` — format string with auto-field references via
-    /// `ValueToStringify`.
+    /// `#[value_to_string("{field} text")]` — format string with auto-field references.
     FormatAutoFields(String),
-    /// `#[value_to_string("fmt {}", expr1, expr2)]` — format string with explicit expression
-    /// arguments. Each expression is resolved through `ValueToStringify`.
+    /// `#[value_to_string("fmt {}", expr1, expr2)]` — format string with explicit expressions.
     FormatExprs(String, Vec<Expr>),
-    /// `#[value_to_string(expr)]` — single expression delegation. The expression is resolved
-    /// through `ValueToStringify`.
+    /// `#[value_to_string(expr)]` — single expression delegation.
     DirectExpr(Expr),
 }
 
 /// Derive macro for `ValueToString`.
 ///
-/// # Usage
+/// Supports four forms:
+/// - No attribute: delegates to `Display::to_string(self)`
+/// - `#[value_to_string("{field} text")]`: auto-field references resolved via `ValueToStringify`
+/// - `#[value_to_string("fmt {}", expr)]`: format string with explicit expression arguments
+/// - `#[value_to_string(expr)]`: direct expression delegation
 ///
-/// ## Structs with `Display` (no attribute)
-/// Delegates to `Display::to_string(self)`:
-/// ```ignore
-/// #[derive(ValueToString)]
-/// struct ModuleId(String); // requires Display impl
-/// ```
-///
-/// ## Format string with auto-field references
-/// Field names in `{...}` are automatically prefixed with `self.` and resolved through
-/// `ValueToStringify`, which handles both `Display` types and `Vc<T>`/`ResolvedVc<T>`.
-/// ```ignore
-/// #[derive(ValueToString)]
-/// #[value_to_string("{name} ({id})")]
-/// struct Foo {
-///     name: String,
-///     id: u32,
-/// }
-/// ```
-///
-/// ## Format string with expression arguments
-/// Positional `{}` slots are filled by the expression arguments. Each expression is resolved
-/// through `ValueToStringify`.
-/// ```ignore
-/// #[derive(ValueToString)]
-/// #[value_to_string("tsconfig extends {}", self.config.ident())]
-/// struct TsExtendsReference {
-///     config: ResolvedVc<Box<dyn Source>>,
-/// }
-/// ```
-///
-/// ## Direct expression delegation
-/// A single expression whose result is resolved through `ValueToStringify`.
-/// ```ignore
-/// #[derive(ValueToString)]
-/// #[value_to_string(self.inner.name)]
-/// struct DiskFileSystem { inner: Inner }
-/// ```
-///
-/// ## Enums
-/// Each variant can have a `#[value_to_string(...)]` attribute using any of the above forms.
-/// Variants without the attribute default to their name.
-/// ```ignore
-/// #[derive(ValueToString)]
-/// enum Kind {
-///     #[value_to_string("module")]
-///     Module,
-///     #[value_to_string("asset {path}")]
-///     Asset { path: Vc<FileSystemPath> },
-///     #[value_to_string(more)]
-///     More(ResolvedVc<Kind>),
-/// }
-/// ```
+/// For enums, each variant can have its own attribute. Variants without one default to their name.
 pub fn derive_value_to_string(input: TokenStream) -> TokenStream {
     let derive_input = parse_macro_input!(input as DeriveInput);
     let ident = &derive_input.ident;
@@ -93,7 +43,30 @@ pub fn derive_value_to_string(input: TokenStream) -> TokenStream {
     }
 }
 
-/// Look for `#[value_to_string(...)]` attribute and parse it into an `AttrForm`.
+/// Wrap a function body in the `#[turbo_tasks::value_impl] impl ValueToString` boilerplate.
+fn wrap_impl(ident: &syn::Ident, is_async: bool, body: TokenStream2) -> TokenStream {
+    let async_kw = if is_async {
+        quote! { async }
+    } else {
+        quote! {}
+    };
+    let ret_ty = if is_async {
+        quote! { anyhow::Result<turbo_tasks::Vc<turbo_rcstr::RcStr>> }
+    } else {
+        quote! { turbo_tasks::Vc<turbo_rcstr::RcStr> }
+    };
+    quote! {
+        #[turbo_tasks::value_impl]
+        impl turbo_tasks::ValueToString for #ident {
+            #[turbo_tasks::function]
+            #async_kw fn to_string(&self) -> #ret_ty {
+                #body
+            }
+        }
+    }
+    .into()
+}
+
 fn find_attr(attrs: &[Attribute]) -> Option<AttrForm> {
     for attr in attrs {
         if attr.path().is_ident("value_to_string") {
@@ -112,7 +85,6 @@ fn find_attr(attrs: &[Attribute]) -> Option<AttrForm> {
     None
 }
 
-/// Parse a `#[value_to_string(...)]` attribute into an `AttrForm`.
 fn parse_attr(attr: &Attribute) -> syn::Result<AttrForm> {
     let args: Punctuated<Expr, Token![,]> = attr.parse_args_with(Punctuated::parse_terminated)?;
     let mut iter = args.into_iter();
@@ -121,7 +93,6 @@ fn parse_attr(attr: &Attribute) -> syn::Result<AttrForm> {
         .next()
         .ok_or_else(|| syn::Error::new_spanned(attr, "expected format string or expression"))?;
 
-    // Check if first arg is a string literal
     if let Expr::Lit(ExprLit {
         lit: Lit::Str(s), ..
     }) = &first
@@ -134,7 +105,6 @@ fn parse_attr(attr: &Attribute) -> syn::Result<AttrForm> {
             Ok(AttrForm::FormatExprs(fmt, rest))
         }
     } else {
-        // Single expression — no additional args allowed
         if let Some(extra) = iter.next() {
             return Err(syn::Error::new_spanned(
                 extra,
@@ -145,21 +115,13 @@ fn parse_attr(attr: &Attribute) -> syn::Result<AttrForm> {
     }
 }
 
-/// Returns true if the format string is a pure constant (no `{` or `}` characters),
-/// meaning it can be used with `rcstr!` directly instead of `format!`.
+/// Returns true if the format string has no `{` or `}` and can use `rcstr!` directly.
 fn is_pure_constant(fmt: &str) -> bool {
     !fmt.contains('{') && !fmt.contains('}')
 }
 
-// ---------------------------------------------------------------------------
-// Format string parsing (for auto-field mode)
-// ---------------------------------------------------------------------------
-
-/// Extract field references from a format string like `"{name} ({id})"`.
-///
-/// Returns:
-/// - The transformed format string (with `{0}` → `{_0}` for positional fields)
-/// - A deduplicated list of field name strings in order of first appearance
+/// Extract `{field}` references from a format string. Returns the transformed format string
+/// (with `{0}` → `{_0}` for positional fields) and a deduplicated list of field names.
 fn parse_format_fields(fmt: &str) -> (String, Vec<String>) {
     let mut fields = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -171,21 +133,18 @@ fn parse_format_fields(fmt: &str) -> (String, Vec<String>) {
     while i < chars.len() {
         if chars[i] == '{' {
             if i + 1 < chars.len() && chars[i + 1] == '{' {
-                // Escaped brace
                 transformed.push_str("{{");
                 i += 2;
                 continue;
             }
-            // Start of field reference
             i += 1;
             let start = i;
             while i < chars.len() && chars[i] != '}' {
                 i += 1;
             }
             let field_name: String = chars[start..i].iter().collect();
-            i += 1; // skip closing '}'
+            i += 1;
 
-            // For numeric field names, prefix with _ for the local variable
             let var_name = if field_name.chars().all(|c| c.is_ascii_digit()) {
                 format!("_{field_name}")
             } else {
@@ -200,7 +159,6 @@ fn parse_format_fields(fmt: &str) -> (String, Vec<String>) {
             transformed.push_str(&var_name);
             transformed.push('}');
         } else if chars[i] == '}' && i + 1 < chars.len() && chars[i + 1] == '}' {
-            // Escaped closing brace
             transformed.push_str("}}");
             i += 2;
         } else {
@@ -212,12 +170,6 @@ fn parse_format_fields(fmt: &str) -> (String, Vec<String>) {
     (transformed, fields)
 }
 
-// ---------------------------------------------------------------------------
-// Field access helpers
-// ---------------------------------------------------------------------------
-
-/// Generate the field access token stream for a given field name on `self`.
-/// Named fields use `self.name`, positional fields use `self.0`.
 fn struct_field_access(field_name: &str) -> TokenStream2 {
     if field_name.chars().all(|c| c.is_ascii_digit()) {
         let idx = syn::Index::from(field_name.parse::<usize>().unwrap());
@@ -228,25 +180,16 @@ fn struct_field_access(field_name: &str) -> TokenStream2 {
     }
 }
 
-/// Generate a resolve statement: `let var = ValueToStringify::to_stringify(access).await?;`
-///
-/// When `add_ref` is true (struct context), an extra `&` is added because `self.field` gives
-/// owned values. When false (enum context), no `&` is added because destructured bindings in
-/// match arms are already references (e.g., `_0: &ResolvedVc<T>`), and adding `&` would create
-/// `&&ResolvedVc<T>` which doesn't satisfy `ValueToStringify`.
+/// Generate `let var = ValueToStringify::to_stringify([&]access).await?;`
+/// `add_ref` adds `&` for struct context (owned values); enum context already has references.
 fn generate_resolve(var_name: &syn::Ident, access: &TokenStream2, add_ref: bool) -> TokenStream2 {
     if add_ref {
-        quote! {
-            let #var_name = turbo_tasks::display::ValueToStringify::to_stringify(&(#access)).await?;
-        }
+        quote! { let #var_name = turbo_tasks::display::ValueToStringify::to_stringify(&(#access)).await?; }
     } else {
-        quote! {
-            let #var_name = turbo_tasks::display::ValueToStringify::to_stringify(#access).await?;
-        }
+        quote! { let #var_name = turbo_tasks::display::ValueToStringify::to_stringify(#access).await?; }
     }
 }
 
-/// Generate a variable name for a field. Numeric names get a `_` prefix.
 fn field_var_name(field_name: &str) -> syn::Ident {
     if field_name.chars().all(|c| c.is_ascii_digit()) {
         format_ident!("_{}", field_name)
@@ -255,59 +198,39 @@ fn field_var_name(field_name: &str) -> syn::Ident {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Struct code generation
-// ---------------------------------------------------------------------------
-
 fn generate_struct_impl(
     ident: &syn::Ident,
-    fields: &Fields,
+    _fields: &Fields,
     attr: Option<AttrForm>,
 ) -> TokenStream {
-    match attr {
-        Some(AttrForm::FormatAutoFields(fmt)) => generate_struct_format_auto_fields(ident, &fmt),
-        Some(AttrForm::FormatExprs(fmt, exprs)) => {
-            generate_struct_format_exprs(ident, &fmt, &exprs)
-        }
-        Some(AttrForm::DirectExpr(expr)) => generate_struct_direct_expr(ident, &expr),
-        None => {
-            // Delegate to Display
-            let _ = fields;
+    let (is_async, body) = match attr {
+        None => (
+            false,
+            quote! { turbo_tasks::Vc::cell(self.to_string().into()) },
+        ),
+        Some(AttrForm::FormatAutoFields(fmt)) => struct_format_auto_fields_body(&fmt),
+        Some(AttrForm::FormatExprs(fmt, exprs)) => struct_format_exprs_body(&fmt, &exprs),
+        Some(AttrForm::DirectExpr(expr)) => (
+            true,
             quote! {
-                #[turbo_tasks::value_impl]
-                impl turbo_tasks::ValueToString for #ident {
-                    #[turbo_tasks::function]
-                    fn to_string(&self) -> turbo_tasks::Vc<turbo_rcstr::RcStr> {
-                        turbo_tasks::Vc::cell(self.to_string().into())
-                    }
-                }
-            }
-            .into()
-        }
-    }
+                let __val = turbo_tasks::display::ValueToStringify::to_stringify(&(#expr)).await?;
+                Ok(turbo_tasks::Vc::cell(__val.into()))
+            },
+        ),
+    };
+    wrap_impl(ident, is_async, body)
 }
 
-/// Format string with auto-field references: `#[value_to_string("{field}")]`
-fn generate_struct_format_auto_fields(ident: &syn::Ident, fmt: &str) -> TokenStream {
+fn struct_format_auto_fields_body(fmt: &str) -> (bool, TokenStream2) {
     let (transformed_fmt, field_refs) = parse_format_fields(fmt);
 
     if field_refs.is_empty() {
-        // No field references — sync function, use rcstr! for pure constants
         let value_expr = if is_pure_constant(fmt) {
             quote! { turbo_rcstr::rcstr!(#transformed_fmt) }
         } else {
             quote! { format!(#transformed_fmt).into() }
         };
-        return quote! {
-            #[turbo_tasks::value_impl]
-            impl turbo_tasks::ValueToString for #ident {
-                #[turbo_tasks::function]
-                fn to_string(&self) -> turbo_tasks::Vc<turbo_rcstr::RcStr> {
-                    turbo_tasks::Vc::cell(#value_expr)
-                }
-            }
-        }
-        .into();
+        return (false, quote! { turbo_tasks::Vc::cell(#value_expr) });
     }
 
     let resolves: Vec<TokenStream2> = field_refs
@@ -319,29 +242,22 @@ fn generate_struct_format_auto_fields(ident: &syn::Ident, fmt: &str) -> TokenStr
         })
         .collect();
 
-    quote! {
-        #[turbo_tasks::value_impl]
-        impl turbo_tasks::ValueToString for #ident {
-            #[turbo_tasks::function]
-            async fn to_string(&self) -> anyhow::Result<turbo_tasks::Vc<turbo_rcstr::RcStr>> {
-                #(#resolves)*
-                Ok(turbo_tasks::Vc::cell(format!(#transformed_fmt).into()))
-            }
-        }
-    }
-    .into()
+    (
+        true,
+        quote! {
+            #(#resolves)*
+            Ok(turbo_tasks::Vc::cell(format!(#transformed_fmt).into()))
+        },
+    )
 }
 
-/// Format string with expression arguments: `#[value_to_string("fmt {}", expr1)]`
-fn generate_struct_format_exprs(ident: &syn::Ident, fmt: &str, exprs: &[Expr]) -> TokenStream {
+fn struct_format_exprs_body(fmt: &str, exprs: &[Expr]) -> (bool, TokenStream2) {
     let resolve_stmts: Vec<TokenStream2> = exprs
         .iter()
         .enumerate()
         .map(|(i, expr)| {
             let var = format_ident!("__arg{}", i);
-            quote! {
-                let #var = turbo_tasks::display::ValueToStringify::to_stringify(&(#expr)).await?;
-            }
+            quote! { let #var = turbo_tasks::display::ValueToStringify::to_stringify(&(#expr)).await?; }
         })
         .collect();
 
@@ -349,37 +265,14 @@ fn generate_struct_format_exprs(ident: &syn::Ident, fmt: &str, exprs: &[Expr]) -
         .map(|i| format_ident!("__arg{}", i))
         .collect();
 
-    quote! {
-        #[turbo_tasks::value_impl]
-        impl turbo_tasks::ValueToString for #ident {
-            #[turbo_tasks::function]
-            async fn to_string(&self) -> anyhow::Result<turbo_tasks::Vc<turbo_rcstr::RcStr>> {
-                #(#resolve_stmts)*
-                Ok(turbo_tasks::Vc::cell(format!(#fmt, #(#vars),*).into()))
-            }
-        }
-    }
-    .into()
+    (
+        true,
+        quote! {
+            #(#resolve_stmts)*
+            Ok(turbo_tasks::Vc::cell(format!(#fmt, #(#vars),*).into()))
+        },
+    )
 }
-
-/// Direct expression delegation: `#[value_to_string(expr)]`
-fn generate_struct_direct_expr(ident: &syn::Ident, expr: &Expr) -> TokenStream {
-    quote! {
-        #[turbo_tasks::value_impl]
-        impl turbo_tasks::ValueToString for #ident {
-            #[turbo_tasks::function]
-            async fn to_string(&self) -> anyhow::Result<turbo_tasks::Vc<turbo_rcstr::RcStr>> {
-                let __val = turbo_tasks::display::ValueToStringify::to_stringify(&(#expr)).await?;
-                Ok(turbo_tasks::Vc::cell(__val.into()))
-            }
-        }
-    }
-    .into()
-}
-
-// ---------------------------------------------------------------------------
-// Enum code generation
-// ---------------------------------------------------------------------------
 
 fn generate_enum_impl(
     ident: &syn::Ident,
@@ -395,72 +288,63 @@ fn generate_enum_impl(
         match attr {
             Some(AttrForm::FormatExprs(fmt, exprs)) => {
                 needs_async = true;
-                let arm =
-                    generate_enum_format_exprs(ident, variant_ident, &variant.fields, &fmt, &exprs);
-                match_arms.push(arm);
+                match_arms.push(generate_enum_format_exprs(
+                    ident,
+                    variant_ident,
+                    &variant.fields,
+                    &fmt,
+                    &exprs,
+                ));
             }
             Some(AttrForm::DirectExpr(expr)) => {
                 needs_async = true;
-                let arm = generate_enum_direct_expr(ident, variant_ident, &variant.fields, &expr);
-                match_arms.push(arm);
+                match_arms.push(generate_enum_direct_expr(
+                    ident,
+                    variant_ident,
+                    &variant.fields,
+                    &expr,
+                ));
             }
             Some(AttrForm::FormatAutoFields(fmt)) => {
-                let arm = generate_enum_format_auto_fields(
+                match_arms.push(generate_enum_format_auto_fields(
                     ident,
                     variant_ident,
                     &variant.fields,
                     &fmt,
                     &mut needs_async,
-                );
-                match_arms.push(arm);
+                ));
             }
             None => {
-                // Default: use variant name as the string
                 let name = variant_ident.to_string();
-                let arm = generate_enum_format_auto_fields(
+                match_arms.push(generate_enum_format_auto_fields(
                     ident,
                     variant_ident,
                     &variant.fields,
                     &name,
                     &mut needs_async,
-                );
-                match_arms.push(arm);
+                ));
             }
         }
     }
 
-    if needs_async {
-        quote! {
-            #[turbo_tasks::value_impl]
-            impl turbo_tasks::ValueToString for #ident {
-                #[turbo_tasks::function]
-                async fn to_string(&self) -> anyhow::Result<turbo_tasks::Vc<turbo_rcstr::RcStr>> {
-                    let s = match self {
-                        #(#match_arms)*
-                    };
-                    Ok(turbo_tasks::Vc::cell(s.into()))
-                }
-            }
-        }
-        .into()
+    let result_expr = if needs_async {
+        quote! { Ok(turbo_tasks::Vc::cell(s.into())) }
     } else {
+        quote! { turbo_tasks::Vc::cell(s.into()) }
+    };
+
+    wrap_impl(
+        ident,
+        needs_async,
         quote! {
-            #[turbo_tasks::value_impl]
-            impl turbo_tasks::ValueToString for #ident {
-                #[turbo_tasks::function]
-                fn to_string(&self) -> turbo_tasks::Vc<turbo_rcstr::RcStr> {
-                    let s = match self {
-                        #(#match_arms)*
-                    };
-                    turbo_tasks::Vc::cell(s.into())
-                }
-            }
-        }
-        .into()
-    }
+            let s = match self {
+                #(#match_arms)*
+            };
+            #result_expr
+        },
+    )
 }
 
-/// Generate match arm for a variant with auto-field format string.
 fn generate_enum_format_auto_fields(
     ident: &syn::Ident,
     variant_ident: &syn::Ident,
@@ -474,7 +358,6 @@ fn generate_enum_format_auto_fields(
         *needs_async = true;
     }
 
-    // For constant strings (no field refs), use rcstr! for pure constants
     let value_expr = if field_refs.is_empty() && is_pure_constant(fmt) {
         quote! { turbo_rcstr::rcstr!(#transformed_fmt) }
     } else {
@@ -495,7 +378,6 @@ fn generate_enum_format_auto_fields(
                     }
                 })
                 .collect();
-
             let resolves: Vec<TokenStream2> = field_refs
                 .iter()
                 .map(|field_name| {
@@ -504,7 +386,6 @@ fn generate_enum_format_auto_fields(
                     generate_resolve(&var, &quote! { #field_ident }, false)
                 })
                 .collect();
-
             quote! {
                 #ident::#variant_ident { #(#field_patterns),* } => {
                     #(#resolves)*
@@ -524,7 +405,6 @@ fn generate_enum_format_auto_fields(
                     }
                 })
                 .collect();
-
             let resolves: Vec<TokenStream2> = field_refs
                 .iter()
                 .map(|field_name| {
@@ -532,7 +412,6 @@ fn generate_enum_format_auto_fields(
                     generate_resolve(&var, &quote! { #var }, false)
                 })
                 .collect();
-
             quote! {
                 #ident::#variant_ident(#(#field_patterns),*) => {
                     #(#resolves)*
@@ -541,16 +420,11 @@ fn generate_enum_format_auto_fields(
             }
         }
         Fields::Unit => {
-            quote! {
-                #ident::#variant_ident => {
-                    #value_expr
-                }
-            }
+            quote! { #ident::#variant_ident => { #value_expr } }
         }
     }
 }
 
-/// Generate match arm for a variant with format + expression args.
 fn generate_enum_format_exprs(
     ident: &syn::Ident,
     variant_ident: &syn::Ident,
@@ -559,22 +433,17 @@ fn generate_enum_format_exprs(
     exprs: &[Expr],
 ) -> TokenStream2 {
     let pattern = enum_destructure_all(ident, variant_ident, fields);
-
     let resolve_stmts: Vec<TokenStream2> = exprs
         .iter()
         .enumerate()
         .map(|(i, expr)| {
             let var = format_ident!("__arg{}", i);
-            quote! {
-                let #var = turbo_tasks::display::ValueToStringify::to_stringify(#expr).await?;
-            }
+            quote! { let #var = turbo_tasks::display::ValueToStringify::to_stringify(#expr).await?; }
         })
         .collect();
-
     let vars: Vec<syn::Ident> = (0..exprs.len())
         .map(|i| format_ident!("__arg{}", i))
         .collect();
-
     quote! {
         #pattern => {
             #(#resolve_stmts)*
@@ -583,7 +452,6 @@ fn generate_enum_format_exprs(
     }
 }
 
-/// Generate match arm for a variant with a direct expression.
 fn generate_enum_direct_expr(
     ident: &syn::Ident,
     variant_ident: &syn::Ident,
@@ -591,7 +459,6 @@ fn generate_enum_direct_expr(
     expr: &Expr,
 ) -> TokenStream2 {
     let pattern = enum_destructure_all(ident, variant_ident, fields);
-
     quote! {
         #pattern => {
             turbo_rcstr::RcStr::from(turbo_tasks::display::ValueToStringify::to_stringify(#expr).await?)
@@ -599,8 +466,6 @@ fn generate_enum_direct_expr(
     }
 }
 
-/// Generate a destructuring pattern that binds ALL fields of an enum variant.
-/// Named fields bind to their name; tuple fields bind to `_0`, `_1`, etc.
 fn enum_destructure_all(
     ident: &syn::Ident,
     variant_ident: &syn::Ident,
@@ -627,8 +492,6 @@ fn enum_destructure_all(
                 .collect();
             quote! { #ident::#variant_ident(#(#bindings),*) }
         }
-        Fields::Unit => {
-            quote! { #ident::#variant_ident }
-        }
+        Fields::Unit => quote! { #ident::#variant_ident },
     }
 }
