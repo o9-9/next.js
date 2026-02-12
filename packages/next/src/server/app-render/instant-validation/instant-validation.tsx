@@ -19,7 +19,11 @@ import {
   printDebugThrownValueForProspectiveRender,
 } from '../prospective-render-utils'
 import { getDigestForWellKnownError } from '../create-error-handler'
-import { InstantValidationBoundary } from './boundary'
+import {
+  // NOTE: we're in the server layer, so this is a client reference
+  InstantValidationBoundary,
+} from './boundary'
+import type { ValidationBoundaryTracking } from './boundary-tracking'
 import {
   getLayoutOrPageModule,
   type LoaderTree,
@@ -772,6 +776,7 @@ export async function createCombinedPayload(
    * */
   navigationParent: SegmentPath,
   releaseSignal: AbortSignal,
+  boundaryState: ValidationBoundaryTracking,
   clientReferenceManifest: ClientReferenceManifest,
   stageEndTimes: StageEndTimes,
   /** Only used when retrying a failed validation to see what caused a dynamic hole. */
@@ -785,6 +790,7 @@ export async function createCombinedPayload(
     validationRouteTree,
     navigationParent,
     releaseSignal,
+    boundaryState,
     clientReferenceManifest,
     stageEndTimes,
     useRuntimeStageForPartialSegments,
@@ -825,6 +831,7 @@ function createValidationSeedData(
   rootRouteTree: RouteTree,
   navigationParent: SegmentPath,
   releaseSignal: AbortSignal,
+  boundaryState: ValidationBoundaryTracking,
   clientReferenceManifest: ClientReferenceManifest,
   stageEndTimes: StageEndTimes,
   useRuntimeStageForPartialSegments: boolean,
@@ -932,12 +939,17 @@ function createValidationSeedData(
       debug?.(
         `    ['${path}' is in the new subtree, adding validation boundary around it]`
       )
+      const boundaryId = path
+      boundaryState.expectedIds.add(boundaryId)
       segmentData = {
         ...segmentData,
         node: (
           // bundled in the server layer
           // eslint-disable-next-line @next/internal/no-ambiguous-jsx
-          <InstantValidationBoundary key="c" /* matching `cacheNodeKey` */>
+          <InstantValidationBoundary
+            id={boundaryId}
+            key="c" /* matching `cacheNodeKey` */
+          >
             {segmentData.node}
           </InstantValidationBoundary>
         ),
