@@ -58,7 +58,7 @@ pub fn function(args: TokenStream, input: TokenStream) -> TokenStream {
     let function_path_string = ident.to_string();
 
     let native_fn = NativeFn {
-        function_global_name: global_name(&function_path_string),
+        function_global_name: global_name(0, &function_path_string),
         function_path_string,
         function_path: quote! { #inline_function_ident },
         is_method: turbo_fn.is_method(),

@@ -142,32 +142,37 @@ inventory::collect! {CollectableTraitCastFunctions}
 
 #[allow(clippy::type_complexity)]
 pub struct CollectableTraitMethods(
-    // A value type name
-    pub &'static str,
-    pub fn() -> (TraitTypeId, Vec<(&'static str, &'static NativeFunction)>),
+    pub  fn() -> (
+        &'static str, // A value type name
+        TraitTypeId,
+        Vec<(&'static str, &'static NativeFunction)>,
+    ),
 );
-inventory::collect! {CollectableTraitMethods}
+inventory::collect!(CollectableTraitMethods);
 
 // Called when initializing ValueTypes by value_impl
-pub fn register_trait_methods(value: &mut ValueType) {
+pub fn register_trait_methods(value_type: &mut ValueType) {
     #[allow(clippy::type_complexity)]
     static TRAIT_METHODS_BY_VALUE: Lazy<
         FxDashMap<&'static str, Vec<(TraitTypeId, Vec<(&'static str, &'static NativeFunction)>)>>,
     > = Lazy::new(|| {
         let map: FxDashMap<&'static str, Vec<_>> = FxDashMap::default();
-        for CollectableTraitMethods(value_name, thunk) in inventory::iter::<CollectableTraitMethods>
-        {
-            map.entry(*value_name).or_default().push(thunk());
+        for CollectableTraitMethods(thunk) in inventory::iter::<CollectableTraitMethods> {
+            let (value_name, trait_type_id, fn_items) = thunk();
+            eprintln!("{}", value_name);
+            map.entry(value_name)
+                .or_default()
+                .push((trait_type_id, fn_items));
         }
         map
     });
-    match TRAIT_METHODS_BY_VALUE.remove(value.global_name) {
+    match TRAIT_METHODS_BY_VALUE.remove(value_type.global_name) {
         Some((_, traits)) => {
             for (trait_type_id, methods) in traits {
                 let trait_type = crate::registry::get_trait(trait_type_id);
-                value.register_trait(trait_type_id);
+                value_type.register_trait(trait_type_id);
                 for (name, method) in methods {
-                    value.register_trait_method(trait_type.get(name), method);
+                    value_type.register_trait_method(trait_type.get(name), method);
                 }
             }
         }
@@ -193,21 +198,37 @@ macro_rules! inventory_submit {
 #[doc(hidden)]
 pub use inventory::submit as inventory_submit_inner;
 
-/// Define a global name for a turbo-tasks value.
-#[cfg(not(rust_analyzer))] // ignore-rust-analyzer due to https://github.com/rust-lang/rust-analyzer/issues/19993
 #[macro_export]
 macro_rules! global_name {
-    ($($item:tt)*) => {
-
-        ::std::concat!(::std::env!("CARGO_PKG_NAME"), "@", ::std::module_path!(), "::", $($item)*)
-    }
-}
-/// Define a global name for a turbo-tasks value.
-/// This has a dummy implementation for Rust Analyzer to avoid https://github.com/rust-lang/rust-analyzer/issues/19993
-#[cfg(rust_analyzer)]
-#[macro_export]
-macro_rules! global_name {
-    ($($item:tt)*) => {
-        $($item)*
+    ($depth:literal, $($item:tt)+) => {
+        {
+            #[cfg(debug_assertions)]
+            {
+                use ::std::sync::atomic::{AtomicBool, Ordering};
+                static ONLY_RUN_ONCE: AtomicBool = AtomicBool::new(false);
+                assert!(!AtomicBool::load(&ONLY_RUN_ONCE, Ordering::Acquire));
+                AtomicBool::store(&ONLY_RUN_ONCE, false, Ordering::Release);
+            }
+            // We (ab)use `type_name` to get the full path to our current parent item.
+            //
+            // The stdlib docs explicitly recommend against using type_name to get a unique
+            // identifier, but the way we're using it here seems unlikely to break, and we've got
+            // runtime logic to panic if it does.
+            struct ItemName;
+            let mut base = ::std::any::type_name::<ItemName>();
+            // strip a caller-defined number of elements from the end of the path
+            for _ in 0..($depth+1) {  // add one to `depth` for ItemName
+                base = ::std::option::Option::unwrap(
+                    ::std::primitive::str::rsplit_once(base, "::"),
+                ).0;
+            }
+            // we cannot use `concat!` because `type_name` is not const, we leak the string instead
+            // to get a &'static str.
+            // Assumption: the code that invokes this macro is only run once (e.g. part of an
+            // `inventory::submit!` callsite), so we're leaking a bounded number of strings.
+            ::std::boxed::Box::leak(
+                ::std::string::String::into_boxed_str(::std::format!("{}::{}", base, $($item)+)),
+            )
+        }
     }
 }

@@ -39,7 +39,7 @@ pub fn primitive(input: TokenStream) -> TokenStream {
         }
     };
 
-    let name = global_name(quote!(stringify!(#ty)));
+    let name = global_name(0, quote!(stringify!(#ty)));
     let new_value_type = if let Some(bincode_wrappers) = bincode_wrappers {
         let BincodeWrappers {
             encode_ty,

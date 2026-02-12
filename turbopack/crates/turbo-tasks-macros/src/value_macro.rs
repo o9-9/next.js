@@ -341,7 +341,7 @@ pub fn value(args: TokenStream, input: TokenStream) -> TokenStream {
         });
     }
 
-    let name = global_name(quote! {stringify!(#ident) });
+    let name = global_name(0, quote! {stringify!(#ident) });
     let new_value_type = match serialization_mode {
         SerializationMode::None => quote! {
             turbo_tasks::ValueType::new::<#ident>(#name)
@@ -428,12 +428,14 @@ pub fn value_type_and_register(
 
         static #value_type_ident: turbo_tasks::macro_helpers::Lazy<turbo_tasks::ValueType> =
             turbo_tasks::macro_helpers::Lazy::new(|| {
-                let mut value = #new_value_type;
-                turbo_tasks::macro_helpers::register_trait_methods(&mut value);
-                value
+                let mut value_type = #new_value_type;
+                turbo_tasks::macro_helpers::register_trait_methods(&mut value_type);
+                value_type
              });
 
-        turbo_tasks::macro_helpers::inventory_submit!{turbo_tasks::macro_helpers::CollectableValueType(&#value_type_ident)}
+        turbo_tasks::macro_helpers::inventory_submit! {
+            turbo_tasks::macro_helpers::CollectableValueType(&#value_type_ident)
+        }
 
         #[automatically_derived]
         unsafe impl #impl_generics turbo_tasks::VcValueType for #ty #where_clause {
